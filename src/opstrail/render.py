@@ -7,6 +7,7 @@ from datetime import datetime, tzinfo
 from typing import Any
 
 from opstrail.episodes import app_display
+from opstrail.events import is_focus_window
 
 MAX_COMMANDS_PER_EPISODE = 150
 
@@ -81,7 +82,7 @@ def command_lines(events: list[dict[str, Any]], tz: tzinfo, limit: int = MAX_COM
 def window_summary(events: list[dict[str, Any]], top: int = 12) -> list[tuple[str, float]]:
     totals: Counter[str] = Counter()
     for ev in events:
-        if ev["type"] != "window":
+        if not is_focus_window(ev):
             continue
         d = ev.get("data") or {}
         title = str(d.get("title") or "").strip()

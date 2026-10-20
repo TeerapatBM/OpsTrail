@@ -41,13 +41,16 @@ class Agent:
         foreground: Callable[[], dict[str, Any] | None] = osapi.foreground,
         idle_seconds: Callable[[], float] = osapi.idle_seconds,
         clock: Callable[[], float] = time.time,
+        windows: Callable[[], list[tuple[str, str]]] = osapi.top_level_windows,
     ):
         self.svc = svc
         self.cfg: Config = svc.cfg
         self._foreground = foreground
         self._idle_seconds = idle_seconds
         self._clock = clock
+        self._windows = windows
         self.current: Segment | None = None
+        self.presence: Segment | None = None  # meeting window open in the background (screen sharing)
         self.idle_since: float | None = None
         self.last_refresh = 0.0
         self.last_heartbeat = 0.0
@@ -57,6 +60,7 @@ class Agent:
         self.exclude_apps = {a.lower() for a in cap.get("exclude_apps", [])}
         self.exclude_titles = [re.compile(p) for p in cap.get("exclude_title_patterns", []) if _valid(p)]
         self.auto_shot_titles = [re.compile(p) for p in cap.get("auto_screenshot_title_patterns", []) if _valid(p)]
+        self.detect_background = bool(self.cfg.data.get("meetings", {}).get("detect_background", True))
 
     # --------------------------------------------------------------- capture
     def _excluded(self, fg: dict[str, Any]) -> bool:
@@ -87,9 +91,23 @@ class Agent:
                 "idle", {}, source="agent", ts=datetime.fromtimestamp(start, self.cfg.tz), duration_s=end - start
             )
 
+    def flush_presence(self, end: float) -> None:
+        seg = self.presence
+        self.presence = None
+        if seg is None or end - seg.start < float(self.cfg.capture.get("min_window_s", 3)):
+            return
+        self.svc.record(
+            "window",
+            {"app": seg.app, "title": seg.title[:300], "presence": True},
+            source="agent",
+            ts=datetime.fromtimestamp(seg.start, self.cfg.tz),
+            duration_s=end - seg.start,
+        )
+
     def capture_tick(self, now: float) -> None:
         if self.cfg.is_paused():
             self.flush(now)
+            self.flush_presence(now)
             self.idle_since = None
             return
         idle = self._idle_seconds()
@@ -98,11 +116,19 @@ class Agent:
             if self.idle_since is None:
                 self.idle_since = now - idle
                 self.flush(self.idle_since)
+                self.flush_presence(self.idle_since)
             return
         if self.idle_since is not None:
             self._record_idle(self.idle_since, now - idle)
             self.idle_since = None
 
+        self._focus_tick(now)
+        try:
+            self.presence_tick(now)
+        except Exception:
+            log.exception("meeting presence check failed")
+
+    def _focus_tick(self, now: float) -> None:
         fg = self._foreground()
         if not fg or self._excluded(fg):
             self.flush(now)
@@ -117,6 +143,34 @@ class Agent:
         self.flush(now)
         self.current = Segment(str(key[0]), str(key[1]), int(fg.get("pid") or 0), int(fg.get("hwnd") or 0), now)
         self._maybe_auto_shot(fg, now)
+
+    def presence_tick(self, now: float) -> None:
+        """While a meeting window is open but the user works elsewhere (screen sharing), keep a
+        synthetic `window` segment with data.presence = true so the meeting episode spans the call."""
+        if not self.detect_background:
+            return
+        from opstrail.activity import classifier_for
+
+        clf = classifier_for(self.cfg.home)
+        seg = self.current
+        if seg is not None and clf.classify("window", {"app": seg.app, "title": seg.title})[0] == "meeting":
+            self.flush_presence(now)  # the meeting itself has focus: the focus segment already counts
+            return
+        meetings = [
+            (str(app), str(title))
+            for app, title in self._windows()
+            if clf.classify("window", {"app": app, "title": title})[0] == "meeting"
+            and not self._excluded({"app": app, "title": title})
+        ]
+        pres = self.presence
+        if pres is not None and (pres.app, pres.title) in meetings:
+            if now - pres.start >= MAX_SEGMENT_S:
+                self.flush_presence(now)
+                self.presence = Segment(pres.app, pres.title, 0, 0, now)
+            return
+        self.flush_presence(now)
+        if meetings:
+            self.presence = Segment(meetings[0][0], meetings[0][1], 0, 0, now)
 
     def _maybe_auto_shot(self, fg: dict[str, Any], now: float) -> None:
         if not self.auto_shot_titles:
@@ -202,6 +256,8 @@ class Agent:
 
     # -------------------------------------------------------------- meetings
     def _in_meeting_now(self) -> bool:
+        if self.presence is not None:
+            return True
         seg = self.current
         if seg is None:
             return False
@@ -283,6 +339,7 @@ class Agent:
                     slept += 0.25
         finally:
             self.flush(self._clock())
+            self.flush_presence(self._clock())
             self.svc.record("system", {"message": "agent stopped"}, source="agent")
             self.svc.store.kv_set("agent:heartbeat", "0")
             log.info("agent stopped")

@@ -84,6 +84,15 @@ def foreground() -> dict[str, Any] | None:
     return None
 
 
+def top_level_windows() -> list[tuple[str, str]]:
+    """(app, title) of all visible windows. Windows only; elsewhere [] (no background meeting detection)."""
+    if IS_WINDOWS:
+        from opstrail.agent import winapi
+
+        return winapi.top_level_windows()
+    return []
+
+
 def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
     if IS_WINDOWS and hwnd:
         from opstrail.agent import winapi

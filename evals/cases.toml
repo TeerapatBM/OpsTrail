@@ -39,3 +39,24 @@ date = "2026-10-21"
   must_mention = ["pilot", "20"]
   must_not_contain = []
   max_unsupported = 0
+
+# Screen sharing: the Teams meeting window stays open in the background (presence segments, T-102) while
+# the engineer works in PowerShell / pfSense. The call must stay ONE meeting with its full time span.
+[[case]]
+name = "screen-share-day"
+day = "days/screen-share-day-01.jsonl"
+date = "2026-10-22"
+
+  [case.episodes]
+  count_min = 3
+  count_max = 3
+  meetings = 1
+  titles_contain = ["ประชุม: Change review Firewall"]
+  meeting_time = "09:00–09:40"
+
+  [case.doc]
+  template = "meeting-minutes"
+  episodes_with_title = "Change review"
+  must_mention = ["514", "change window"]
+  must_not_contain = []
+  max_unsupported = 0

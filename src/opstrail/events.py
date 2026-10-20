@@ -135,7 +135,8 @@ def event_text(type_: str, data: dict[str, Any]) -> str:
         return str(data.get("cmd", ""))
     if type_ == "window":
         title = data.get("title") or ""
-        return f"{data.get('app', '')} — {title}".strip(" —")
+        text = f"{data.get('app', '')} — {title}".strip(" —")
+        return f"{text} [background]" if data.get("presence") else text
     if type_ == "note":
         return str(data.get("text", ""))
     if type_ == "screenshot":
@@ -148,6 +149,11 @@ def event_text(type_: str, data: dict[str, Any]) -> str:
     if type_ == "system":
         return str(data.get("message", ""))
     return type_
+
+
+def is_focus_window(ev: dict[str, Any]) -> bool:
+    """A window the user had in focus (not a background meeting-presence segment, see SPEC §4)."""
+    return ev.get("type") == "window" and not (ev.get("data") or {}).get("presence")
 
 
 def parse_tsv_line(line: str, cfg: Config) -> dict[str, Any]:
