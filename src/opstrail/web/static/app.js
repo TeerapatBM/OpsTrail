@@ -8,7 +8,7 @@ const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ESC[c]);
 const ACT_LABEL = { meeting: "ประชุม", chat: "แชท", email: "อีเมล", terminal: "Terminal", remote: "Remote", console: "Console",
   research: "ค้นข้อมูล", docs: "เอกสาร", code: "เขียนโค้ด", ai: "AI assistant", files: "ไฟล์", other: "อื่นๆ" };
-const state = { status: null, llm: null, templates: null, dirty: false, hash: "", skipHash: false };
+const state = { status: null, llm: null, templates: null, dirty: false, generating: false, hash: "", skipHash: false };
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function isoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
@@ -53,6 +53,62 @@ function toast(msg, err = false) {
   el.textContent = msg;
   $("#toasts").appendChild(el);
   setTimeout(() => el.remove(), err ? 7000 : 3500);
+}
+
+async function streamAI(path, body, onDelta) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-opstrail": "1" }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  if (!res.body || !res.headers.get("content-type")?.includes("text/event-stream")) throw new Error("ไม่ได้รับ streaming จาก OpsTrail");
+  const reader = res.body.getReader(), decoder = new TextDecoder();
+  let pending = "", result;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      // Normalize CRLF only after a complete line has arrived.
+      pending = pending.replace(/\r\n/g, "\n");
+      let end;
+      while ((end = pending.indexOf("\n\n")) !== -1) {
+        const block = pending.slice(0, end);
+        pending = pending.slice(end + 2);
+        const data = block.split("\n").filter((s) => s.startsWith("data:")).map((s) => s.slice(5).replace(/^ /, "")).join("\n");
+        if (!data) continue;
+        const event = JSON.parse(data);
+        if (event.event === "error") throw new Error(event.error);
+        if (event.event === "delta") onDelta(event.text);
+        if (event.event === "done") { result = event; return result; }
+      }
+      if (done) break;
+    }
+    throw new Error("การเชื่อมต่อขาดก่อน AI เขียนเสร็จ — เปิดประวัติเวอร์ชันเพื่อตรวจสอบก่อนลองใหม่");
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+function diffSide(hunks, side) {
+  let text = "", ranges = [];
+  for (const h of hunks) {
+    const start = text.length;
+    text += h[side];
+    if (h.op !== "equal" && text.length > start) ranges.push([start, text.length]);
+  }
+  const tag = side === "before" ? "del" : "ins";
+  if (typeof Intl.Segmenter !== "function") {
+    return hunks.map((h) => h.op === "equal" ? esc(h[side]) : `<${tag}>${esc(h[side])}</${tag}>`).join("");
+  }
+  // Built-in dictionary segmentation highlights complete Thai words, even without spaces.
+  const segments = new Intl.Segmenter("th", { granularity: "word" }).segment(text);
+  let range = 0;
+  return Array.from(segments, ({ segment, index }) => {
+    while (range < ranges.length && ranges[range][1] <= index) range++;
+    const changed = range < ranges.length && ranges[range][0] < index + segment.length;
+    return changed ? `<${tag}>${esc(segment)}</${tag}>` : esc(segment);
+  }).join("");
 }
 const fail = (e) => toast(e.message || String(e), true);
 
@@ -502,6 +558,7 @@ async function renderDoc(id) {
       <span class="badge accent">${esc(tpl ? tpl.title : d.template)}</span>
       <select id="status">${["draft", "review", "final", "archived"].map((s) => `<option value="${s}" ${s === d.status ? "selected" : ""}>${s}</option>`).join("")}</select>
       <select id="ver"></select>
+      <button class="btn small" id="diff-btn">เทียบเวอร์ชัน</button>
     </div>
     <div class="card toolbar">
       <input class="ai-instr" id="instr" placeholder="คำสั่งเพิ่มเติมถึง AI (ไม่บังคับ) เช่น “สั้นลง เน้นขั้นตอน”, “เพิ่มส่วน rollback”">
@@ -516,6 +573,15 @@ async function renderDoc(id) {
       <button class="btn" id="fc-btn" title="หา IP / version / hostname ในเอกสารที่ไม่มีในข้อมูลที่บันทึก">ตรวจข้อเท็จจริง</button>
     </div>
     <div id="fc"></div>
+    <div id="ai-progress" class="banner small" role="status" hidden>AI กำลังเขียนเอกสาร…</div>
+    <section id="version-diff" class="card pad" hidden>
+      <h2>เทียบเวอร์ชันที่บันทึกแล้ว</h2>
+      <div class="row"><label>จาก <select id="diff-from" aria-label="จากเวอร์ชัน"></select></label>
+        <label>ถึง <select id="diff-to" aria-label="ถึงเวอร์ชัน"></select></label>
+        <button class="btn small" id="diff-close">ปิด</button></div>
+      <p class="muted small">ข้อความที่ลบมีเส้นขีดฆ่า · ข้อความที่เพิ่มมีเส้นใต้ · ไม่รวมการแก้ไขที่ยังไม่บันทึก</p>
+      <div id="diff-output" aria-live="polite"></div>
+    </section>
     ${llmReady ? "" : `<div class="banner warn small">ยังไม่ได้ตั้งค่า AI — ไปที่ <a href="#/settings">ตั้งค่า</a> เพื่อใช้ปุ่ม “ให้ AI เขียน” หรือกด <b>Copy prompt</b> ไปวางใน ChatGPT/Claude แล้วกด <b>Paste ผลลัพธ์</b></div>`}
     <div id="verinfo" class="muted small" style="margin-bottom:6px"></div>
     <div class="tabs"><button class="btn small primary" data-pane="edit">แก้ไข</button><button class="btn small" data-pane="preview">ตัวอย่าง</button></div>
@@ -544,15 +610,43 @@ async function renderDoc(id) {
       ? `<span class="badge warn">กำลังดู v${doc.version} (ไม่ใช่ล่าสุด)</span> กด “บันทึก” เพื่อใช้เวอร์ชันนี้เป็นเวอร์ชันใหม่`
       : cur ? `v${cur.version}${cur.change_note ? " — " + esc(cur.change_note) : ""}` : "";
     $("#ai", v).textContent = doc.versions.length ? "✨ ให้ AI ปรับ" : "✨ ให้ AI เขียน";
+    $("#diff-btn", v).disabled = doc.versions.length < 2;
+    $("#version-diff", v).hidden = true;
     $("#srcs", v).innerHTML = doc.episodes.length
       ? `<table class="list"><tbody>${doc.episodes.map((e) => `<tr><td class="muted">${esc(e.date)} ${esc(e.time)}</td><td><a href="#/day/${esc(e.date)}">${esc(e.title)}</a></td><td class="muted">${e.commands} คำสั่ง · ${e.notes} โน้ต · ${e.screenshots} รูป</td></tr>`).join("")}</tbody></table>`
       : `<div class="muted">ยังไม่มีงานในแหล่งข้อมูล — กด “+ เพิ่มงาน”</div>`;
   };
   showVersion(d);
+  let diffRequest = 0;
+  const compareVersions = async () => {
+    const request = ++diffRequest;
+    const before = $("#diff-from", v).value, after = $("#diff-to", v).value;
+    const output = $("#diff-output", v);
+    output.textContent = "กำลังเทียบ…";
+    try {
+      const r = await api(`/api/docs/${id}/diff?from=${before}&to=${after}`);
+      if (request !== diffRequest) return;
+      output.innerHTML = `<div class="diff-columns"><div><h3>จาก v${esc(before)}</h3><pre class="diff-text">${diffSide(r.hunks, "before")}</pre></div>
+        <div><h3>ถึง v${esc(after)}</h3><pre class="diff-text">${diffSide(r.hunks, "after")}</pre></div></div>`;
+    } catch (e) { if (request === diffRequest) output.textContent = e.message; }
+  };
+  $("#diff-btn", v).addEventListener("click", () => {
+    const versions = loaded.versions;
+    const options = versions.map((x) => `<option value="${x.version}">v${x.version} · ${esc(x.change_note || x.author || "")}</option>`).join("");
+    $("#diff-from", v).innerHTML = options;
+    $("#diff-to", v).innerHTML = options;
+    $("#diff-from", v).value = versions[versions.length - 2].version;
+    $("#diff-to", v).value = loaded.version;
+    $("#version-diff", v).hidden = false;
+    compareVersions();
+  });
+  $("#diff-close", v).addEventListener("click", () => { $("#version-diff", v).hidden = true; diffRequest++; });
+  for (const sel of ["#diff-from", "#diff-to"]) $(sel, v).addEventListener("change", compareVersions);
   ta.addEventListener("input", () => { state.dirty = true; redraw(); });
 
   const reload = async (version) => showVersion(await api(`/api/docs/${id}${version ? `?version=${version}` : ""}`));
   const save = async (note) => {
+    if (state.generating) return;
     const r = await api(`/api/docs/${id}/save`, { body: { markdown: ta.value, change_note: note || "" } });
     state.dirty = false;
     toast(`บันทึกเป็น v${r.version} แล้ว`);
@@ -602,23 +696,50 @@ async function renderDoc(id) {
     try { if (!(await ensureSaved())) return; showFactCheck(await api(`/api/docs/${id}/factcheck?version=${loaded.version || ""}`)); }
     catch (e) { fail(e); }
   });
+  let aiPending = false;
   const runAI = async () => {
+    if (state.generating || aiPending) return;
     if (!(state.llm && state.llm.ready)) {
       const r = await modal(`<h2>ยังไม่ได้ตั้งค่า AI</h2><p>ไปที่หน้า <b>ตั้งค่า</b> เพื่อใส่ Claude API / OpenAI / Azure OpenAI key
         หรือใช้ <b>Copy prompt</b> แล้วไปวางใน ChatGPT หรือ Claude บนเว็บ จากนั้นกด <b>Paste ผลลัพธ์</b></p>`, { ok: "ไปหน้าตั้งค่า" });
       if (r) location.hash = "#/settings";
       return;
     }
-    try { if (!(await ensureSaved())) return; } catch (e) { return fail(e); }
-    const done = busy("AI กำลังเขียนเอกสาร… (ปกติ 20–120 วินาที)");
+    aiPending = true;
+    try { if (!(await ensureSaved())) { aiPending = false; return; } }
+    catch (e) { aiPending = false; return fail(e); }
+    state.generating = true;
+    const controls = $$("button,input,select,textarea", v).map((el) => [el, el.disabled]);
+    controls.forEach(([el]) => { el.disabled = true; });
+    const previous = ta.value;
+    const progress = $("#ai-progress", v);
+    progress.hidden = false;
+    $("#fc", v).innerHTML = "";
+    let received = false, completed = false;
     try {
-      const r = await api(`/api/docs/${id}/generate`, { body: { instruction: $("#instr", v).value } });
+      const r = await streamAI(`/api/docs/${id}/generate?stream=1`, { instruction: $("#instr", v).value }, (text) => {
+        if (!received) { ta.value = ""; received = true; }
+        ta.value += text;
+        redraw();
+      });
+      completed = true;
+      ta.value = r.markdown;
+      draw();
       toast(`AI เขียนเสร็จ — บันทึกเป็น v${r.version} (${r.model})`);
       if (r.truncated) toast("คำตอบถูกตัดเพราะยาวเกิน — เพิ่ม max tokens ในหน้าตั้งค่า", true);
       $("#instr", v).value = "";
-      await reload();
+      await reload(r.version);
       showFactCheck(r.fact_check);
-    } catch (e) { fail(e); } finally { done(); }
+    } catch (e) {
+      if (!completed) { ta.value = previous; draw(); }
+      fail(e);
+    } finally {
+      state.generating = false;
+      aiPending = false;
+      progress.hidden = true;
+      controls.forEach(([el, disabled]) => { el.disabled = disabled; });
+      $("#diff-btn", v).disabled = loaded.versions.length < 2;
+    }
   };
   $("#ai", v).addEventListener("click", runAI);
   $("#copy", v).addEventListener("click", async () => {
@@ -872,6 +993,10 @@ const routes = [
 ];
 
 function route() {
+  if (state.generating) {
+    if (location.hash !== state.hash) location.hash = state.hash;
+    return;
+  }
   if (state.skipHash) { state.skipHash = false; return; }
   if (state.dirty && location.hash !== state.hash) {
     if (!confirm("มีการแก้ไขที่ยังไม่บันทึก — ออกจากหน้านี้?")) { state.skipHash = true; location.hash = state.hash; return; }
@@ -891,7 +1016,7 @@ function route() {
 }
 
 window.addEventListener("hashchange", route);
-window.addEventListener("beforeunload", (e) => { if (state.dirty) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (state.dirty || state.generating) { e.preventDefault(); e.returnValue = ""; } });
 refreshStatus();
 setInterval(refreshStatus, 15000);
 route();

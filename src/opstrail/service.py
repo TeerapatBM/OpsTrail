@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import time
+from difflib import SequenceMatcher
+from collections.abc import Iterator
 from datetime import date as date_cls
 from datetime import timedelta
 from pathlib import Path
@@ -590,6 +592,25 @@ class OpsTrail:
             "episodes": [self._episode_summary(ep) for ep in self._source_episodes(s["id"])],
         }
 
+    def doc_diff(self, session_id: int, from_version: int, to_version: int) -> dict[str, Any]:
+        """Lossless word/Thai-cluster diff of two explicitly selected saved versions."""
+        s = self._require_session(session_id)
+        versions = []
+        for number in (from_version, to_version):
+            if number < 1:
+                raise OpsTrailError("ต้องเลือกเวอร์ชันที่บันทึกแล้วทั้งสองเวอร์ชัน")
+            v = self.store.get_version(s["id"], number)
+            if not v:
+                raise OpsTrailError(f"ไม่พบเวอร์ชัน {number} ของเอกสารนี้")
+            versions.append(v["markdown"])
+        # Thai has no spaces between words. Keep combining marks with their base;
+        # the browser expands changed clusters to dictionary words with Intl.Segmenter.
+        pattern = r"[\u0e00-\u0e7f][\u0e31\u0e34-\u0e3a\u0e47-\u0e4e]*|[^\W\u0e00-\u0e7f]+|\s+|."
+        before, after = [re.findall(pattern, text) for text in versions]
+        hunks = [{"op": op, "before": "".join(before[i:j]), "after": "".join(after[k:l])}
+                 for op, i, j, k, l in SequenceMatcher(None, before, after, autojunk=False).get_opcodes()]
+        return {"hunks": hunks}
+
     def update_doc_meta(self, session_id: int, title: str = "", status: str = "") -> dict[str, Any]:
         s = self._require_session(session_id)
         if title.strip():
@@ -631,9 +652,34 @@ class OpsTrail:
         s = self._require_session(session_id)
         system, user = self.llm_prompt(s["id"], instruction)
         result = llm.complete(self.cfg, system, user)
+        return self._save_generated(s["id"], instruction, result)
+
+    def stream_draft(self, session_id: int, instruction: str = "") -> Iterator[dict[str, Any]]:
+        from opstrail import llm
+
+        self._require_session(session_id)
+        system, user = self.llm_prompt(session_id, instruction)
+
+        def events():
+            chunks = llm.stream_complete(self.cfg, system, user)
+            try:
+                for chunk in chunks:
+                    if isinstance(chunk, llm.LLMResult):
+                        yield {"event": "done", **self._save_generated(session_id, instruction, chunk)}
+                    else:
+                        yield {"event": "delta", "text": chunk}
+            finally:
+                chunks.close()
+
+        return events()
+
+    def _save_generated(self, session_id: int, instruction: str, result: Any) -> dict[str, Any]:
+        from opstrail import llm
+
+        s = self._require_session(session_id)
         markdown = llm.strip_fences(result.text)
         if not markdown.strip():
-            raise OpsTrailError("the AI returned an empty document")
+            raise OpsTrailError("AI ส่งเอกสารว่าง — ยังไม่ได้บันทึกเวอร์ชันใหม่")
         note = "AI draft" + (f": {instruction.strip()[:80]}" if instruction.strip() else "")
         if result.truncated:
             note += " (truncated – increase max_tokens)"

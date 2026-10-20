@@ -51,7 +51,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - T-101 browser extension (GPT) · T-103 voice note (GPT)
-- T-104 web diff + streaming (GPT) · T-105 Teams digest (GPT) · T-106 PowerShell output capture (Claude)
+- T-105 Teams digest (GPT) · T-106 PowerShell output capture (Claude)
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
 
@@ -82,6 +82,10 @@ Older backlog items (kept for reference):
 
 ## Done
 
+- T-104 web diff + streaming — GPT, 2026-10-20. Added difflib saved-version API + Thai word comparison;
+  Anthropic/OpenAI/Azure SSE into the editor, save-on-success + fact-check, safe failure recovery.
+  Files: `service.py`, `llm.py`, `web/app.py`, `web/static/app.js`, `app.css`, `tests/test_web.py`, `tests/web_editor_smoke.cjs`, SPEC/README/card/plan.
+  Verification: Playwright fixture smoke clean; pytest/eval blocked because sandbox cannot launch shared Windows Store Python (runner must run both).
 - v0.1.0 initial implementation — Claude, 2026-10-20 (all files).
 - v0.2.0 local web UI + LLM providers — Claude, 2026-10-20 (`web/`, `llm.py`, `secretstore.py`, service web helpers).
 - v0.3.1 duo autopilot — Claude, 2026-10-20 (`scripts/duo.ps1`, `scripts/duo/`, `setup/claude`, `setup/codex`, cards, workflow, docs).
@@ -96,6 +100,8 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-104 provider terminal/error handling, save-once lifecycle, Thai word diff,
+  and editor state/escaping; run pytest + eval (shared Python launcher is inaccessible in Codex sandbox).
 - [ ] GPT: review `src/opstrail/episodes.py` grouping heuristics and `export.py` markdown→docx edge cases.
 - [ ] GPT: review `web/static/app.js` (renderMd escaping, editor dirty-state) and `web/app.py` LocalOnly middleware.
 - [ ] GPT (Codex): review T-102 — `Agent.presence_tick` in `agent/daemon.py`, `winapi.top_level_windows`, and
@@ -103,6 +109,21 @@ Older backlog items (kept for reference):
 
 ## Decision log
 
+- 2026-10-20 — T-104 (GPT): Keep stdlib-only SSE adapters and the existing synchronous generation path;
+  POST fetch streaming retains X-OpsTrail protection. Save only after provider terminal success, emitting
+  one `done` with the saved draft + fact-check. Failed streams emit a generic/safe error without upstream
+  bodies (which may echo keys/prompts); incomplete or empty drafts are never saved. No automatic retry,
+  since a disconnected client may miss a final event after the server has already saved.
+  Read-only Codex review caught permissive stop-reason handling; successful reasons are now allowlisted,
+  with regression cases for filtering/refusal and unknown reasons so partial answers cannot be saved.
+  Codex follow-up review approved the fix; Claude cross-review and the runner's Python gates are pending.
+- 2026-10-20 — T-104 (GPT): difflib compares lossless Latin words/Thai combining clusters in service.py;
+  the two-column UI expands highlights to Thai dictionary word boundaries with built-in Intl.Segmenter,
+  falling back to cluster highlights on older browsers. This avoids a new Thai dictionary dependency.
+  Editor controls and navigation lock during streaming so saves/version changes cannot race the live text.
+- 2026-10-20 — T-104 (GPT): Playwright smoke uses only synthetic local API fixtures, including delayed SSE,
+  and an already-installed browser; it covers the real SPA but is not a Python integration test. Python
+  pytest/eval commands were attempted and fail at process creation in this sandbox; runner gates remain required.
 - 2026-10-20 — Structured capture (commands/windows/notes/screenshots) instead of screen recording: cheaper,
   searchable, less sensitive. Screenshots only on hotkey or configured title patterns.
 - 2026-10-20 — No fine-tuning: templates + examples (few-shot). v0.1: only the MCP client's model writes.

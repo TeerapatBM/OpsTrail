@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -10,7 +11,7 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware import Middleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -198,7 +199,35 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         return ot.save_draft(_int(r.path_params["id"]), str(b.get("markdown", "")), str(b.get("change_note", "")), "web")
 
     def doc_generate(r: Request, b: dict) -> Any:
-        return fresh().generate_draft(_int(r.path_params["id"]), str(b.get("instruction", "")))
+        svc = fresh()
+        sid, instruction = _int(r.path_params["id"]), str(b.get("instruction", ""))
+        if q(r, "stream") != "1":
+            return svc.generate_draft(sid, instruction)
+        stream = svc.stream_draft(sid, instruction)
+
+        def events():
+            try:
+                yield from stream
+            except (llm.LLMError, OpsTrailError) as exc:
+                yield {"event": "error", "error": str(exc)}
+            except Exception:
+                yield {"event": "error", "error": "สร้างเอกสารไม่สำเร็จ — ลองใหม่อีกครั้ง"}
+            finally:
+                stream.close()
+
+        def encode():
+            for event in events():
+                yield f"event: {event['event']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(encode(), media_type="text/event-stream",
+                                 headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
+
+    def doc_diff(r: Request, b: dict) -> Any:
+        try:
+            before, after = int(q(r, "from")), int(q(r, "to"))
+        except (ValueError, TypeError) as exc:
+            raise OpsTrailError("ระบุ from และ to เป็นเลขเวอร์ชันที่บันทึกแล้ว") from exc
+        return ot.doc_diff(_int(r.path_params["id"]), before, after)
 
     def doc_prompt(r: Request, b: dict) -> Any:
         return {"prompt": fresh().copy_prompt(_int(r.path_params["id"]), q(r, "instruction"))}
@@ -293,6 +322,7 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         Route("/api/docs/{id:int}/meta", api(doc_meta, body=True), methods=["POST"]),
         Route("/api/docs/{id:int}/save", api(doc_save, body=True), methods=["POST"]),
         Route("/api/docs/{id:int}/generate", api(doc_generate, body=True), methods=["POST"]),
+        Route("/api/docs/{id:int}/diff", api(doc_diff)),
         Route("/api/docs/{id:int}/prompt", api(doc_prompt)),
         Route("/api/docs/{id:int}/sources", api(doc_sources, body=True), methods=["POST"]),
         Route("/api/docs/{id:int}/download", api(doc_download)),

@@ -212,3 +212,10 @@ dialog textarea { min-height: 260px; font-family: var(--mono); font-size: 12.5px
   .tabs { display: flex; }
   .panes.show-edit .preview, .panes.show-preview .editor-wrap { display: none; }
 }
+/* Saved-version comparison: preserve Markdown whitespace and fit narrow screens. */
+.diff-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.diff-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.diff-text del { background: #a8303028; text-decoration: line-through; }
+.diff-text ins { background: #24804228; text-decoration: underline; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) { .diff-columns { grid-template-columns: 1fr; } }

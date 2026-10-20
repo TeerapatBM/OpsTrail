@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Iterator
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -242,6 +243,123 @@ def complete(cfg: Config, system: str, user: str) -> LLMResult:
     except (KeyError, IndexError, TypeError) as exc:
         raise LLMError(f"unexpected response: {str(res)[:300]}") from exc
     return LLMResult(text, label, choice.get("finish_reason") == "length")
+
+
+def _sse(url: str, headers: dict[str, str], body: dict) -> Iterator[dict | str]:
+    """Read complete SSE data frames, not network chunks (including split UTF-8)."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST",
+                                 headers={**headers, "content-type": "application/json", "accept": "text/event-stream"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+            if "text/event-stream" not in resp.headers.get("content-type", ""):
+                raise LLMError("ผู้ให้บริการไม่รองรับ streaming (ต้องเป็น text/event-stream)")
+            lines: list[str] = []
+            for raw in resp:
+                line = raw.decode("utf-8").rstrip("\r\n")
+                if line.startswith("data:"):
+                    lines.append(line[5:].removeprefix(" "))
+                elif not line and lines:
+                    data = "\n".join(lines)
+                    lines.clear()
+                    if data == "[DONE]":
+                        yield data
+                    else:
+                        value = json.loads(data)
+                        if not isinstance(value, dict):
+                            raise LLMError("รูปแบบ streaming จากผู้ให้บริการไม่ถูกต้อง")
+                        yield value
+    except urllib.error.HTTPError as exc:
+        # Do not echo upstream bodies: they may include credentials or prompt text.
+        raise LLMError(f"ผู้ให้บริการ streaming ตอบ HTTP {exc.code}; ตรวจการตั้งค่า AI") from exc
+    except (urllib.error.URLError, OSError) as exc:
+        raise LLMError("ติดต่อผู้ให้บริการ streaming ไม่สำเร็จหรือการเชื่อมต่อขาด") from exc
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise LLMError("รูปแบบ streaming จากผู้ให้บริการไม่ถูกต้อง") from exc
+
+
+def stream_complete(cfg: Config, system: str, user: str) -> Iterator[str | LLMResult]:
+    """Yield text immediately, then exactly one result after the terminal frame."""
+    s = load_settings(cfg)
+    if s.provider == "none":
+        raise LLMError("ยังไม่ได้ตั้งค่า AI — เปิดหน้าตั้งค่าหรือใช้ Copy prompt")
+    key, _ = api_key(cfg, s)
+    if not key and not _local_endpoint(s):
+        raise LLMError("ไม่มี API key — เพิ่มในหน้าตั้งค่า")
+    model = _model(s)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    if s.provider == "anthropic":
+        url = f"{_endpoint(s)}/v1/messages"
+        headers = _anthropic_headers(s, key)
+        body = {"model": model, "max_tokens": s.max_tokens, "system": system,
+                "messages": [{"role": "user", "content": user}], "stream": True}
+    elif s.provider == "azure":
+        if not s.azure_endpoint or not s.azure_deployment:
+            raise LLMError("Azure OpenAI ต้องระบุ endpoint และ deployment")
+        url = (f"{s.azure_endpoint.rstrip('/')}/openai/deployments/{s.azure_deployment}/chat/completions"
+               f"?api-version={s.azure_api_version}")
+        headers = {"api-key": key}
+        body = {"messages": messages, "stream": True}
+    else:
+        url = f"{_endpoint(s)}/chat/completions"
+        headers = {"authorization": f"Bearer {key}"} if key else {}
+        body = {"model": model, "messages": messages, "stream": True}
+    parts: list[str] = []
+    truncated = False
+    finished = False
+    frames = _sse(url, headers, body)
+    try:
+        for frame in frames:
+            if frame == "[DONE]":
+                if s.provider != "anthropic" and finished:
+                    break
+                raise LLMError("streaming จบก่อนคำตอบสมบูรณ์")
+            if not isinstance(frame, dict):
+                raise LLMError("รูปแบบ streaming ไม่ถูกต้อง")
+            if frame.get("error") or frame.get("type") == "error":
+                raise LLMError("ผู้ให้บริการ AI แจ้งข้อผิดพลาดระหว่าง streaming — ลองใหม่อีกครั้ง")
+            text = ""
+            if s.provider == "anthropic":
+                kind = frame.get("type")
+                if kind == "message_start":
+                    model = frame.get("message", {}).get("model", model)
+                elif kind == "content_block_delta" and frame.get("delta", {}).get("type") == "text_delta":
+                    text = frame["delta"].get("text", "")
+                elif kind == "message_delta":
+                    reason = frame.get("delta", {}).get("stop_reason")
+                    if reason:
+                        if reason not in ("end_turn", "stop_sequence", "max_tokens"):
+                            raise LLMError("AI หยุดโดยยังไม่ได้เอกสารสมบูรณ์ — ยังไม่ได้บันทึกเวอร์ชันใหม่")
+                        finished = True
+                        truncated = reason == "max_tokens"
+                elif kind == "message_stop":
+                    if not finished:
+                        raise LLMError("streaming จบก่อนคำตอบสมบูรณ์")
+                    break
+            else:
+                model = frame.get("model") or model
+                for choice in frame.get("choices", []):
+                    if choice.get("index", 0) != 0:
+                        continue
+                    text = (choice.get("delta") or {}).get("content") or ""
+                    reason = choice.get("finish_reason")
+                    if reason:
+                        if reason not in ("stop", "length"):
+                            raise LLMError("AI หยุดโดยยังไม่ได้เอกสารสมบูรณ์ — ยังไม่ได้บันทึกเวอร์ชันใหม่")
+                        finished = True
+                        truncated = reason == "length"
+            if text:
+                if not isinstance(text, str):
+                    raise LLMError("รูปแบบข้อความ streaming ไม่ถูกต้อง")
+                parts.append(text)
+                yield text
+        else:
+            # EOF without message_stop / [DONE] must never save a partial answer.
+            raise LLMError("streaming ขาดก่อนจบ — ยังไม่ได้บันทึกเวอร์ชันใหม่")
+    except (AttributeError, TypeError, KeyError, ValueError) as exc:
+        raise LLMError("รูปแบบ streaming จากผู้ให้บริการไม่ถูกต้อง") from exc
+    finally:
+        frames.close()
+    yield LLMResult("".join(parts), f"{s.provider}:{model}", truncated)
 
 
 def list_models(cfg: Config) -> list[str]:

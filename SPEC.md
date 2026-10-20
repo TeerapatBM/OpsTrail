@@ -238,12 +238,32 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
 * Screenshots are only served from inside `~/.opstrail/shots` (path-checked).
 * JSON API (all under `/api`): `status`, `capture`, `day/{date}`, `day/{date}/recap`, `timeline`,
   `episodes/{id}` (GET/POST), `episodes/merge`, `notes`, `shots/{id}`, `templates`, `docs` (GET/POST),
-  `docs/{id}` (+`/meta`, `/save`, `/generate`, `/prompt`, `/sources`, `/download`), `recaps`, `search`,
+  `docs/{id}` (+`/meta`, `/save`, `/generate`, `/diff`, `/prompt`, `/sources`, `/download`), `recaps`, `search`,
   `llm` (GET/POST), `llm/test`, `profile` (GET/POST), `docs/{id}/factcheck`, `day/{date}/ai-titles`,
   `style/{template}` (GET/POST), `style/{template}/learn`.
 * AI generation (`OpsTrail.generate_draft`): system + user prompt = source pack (mode "api") + current draft
   (for revisions) + optional user instruction → provider in `opstrail.llm` → new version (author = provider:model).
   Copy prompt / Paste result offers the same flow without an API key.
+* Saved-version comparison: `GET /api/docs/{id}/diff?from=<version>&to=<version>` requires two positive,
+  existing version numbers belonging to that session (invalid/missing versions → JSON 400). Service uses
+  `difflib.SequenceMatcher` and returns `{hunks: [{op, before, after}, ...]}`; `op` is `equal`, `insert`,
+  `delete` or `replace`. Concatenating each side reconstructs the exact saved Markdown. Tokens preserve
+  whitespace, Latin words and Thai combining clusters. The web comparison shows two escaped text columns
+  and expands changed clusters to complete Thai words with built-in `Intl.Segmenter("th")`; older browsers
+  fall back to cluster highlights. Any two saved versions may be selected; unsaved edits are excluded.
+* `POST /api/docs/{id}/generate?stream=1` (same JSON `{instruction}` and CSRF rules) returns
+  `text/event-stream`, `Cache-Control: no-cache`. Frames have named SSE events and JSON data containing
+  `event`: `delta` adds `{text}`, `done` carries the same saved `{session_id, version, markdown, model,
+  truncated, fact_check}` as non-stream generation, and `error` carries a safe `{error}` message.
+  Validation of the document happens before streaming (JSON 400). Provider/configuration failures after
+  the stream opens are `error` events with HTTP 200. Anthropic uses Messages `stream: true` through
+  `message_stop`; OpenAI-compatible/Azure use Chat Completions SSE through `[DONE]` after a finish reason.
+  Only successful terminal streams save one version (including explicitly token-limited answers, marked
+  `truncated`): accepted reasons are Anthropic `end_turn`/`stop_sequence`/`max_tokens` and OpenAI/Azure
+  `stop`/`length`. Refusal/filter/tool/unknown reasons and empty/error/malformed/interrupted answers save
+  nothing. The editor displays deltas live,
+  locks editing/save/version switching until completion, and restores its prior content on stream failure.
+  Requests without `stream=1` retain the synchronous JSON contract. No dependencies or CSP changes.
 * At recap time the agent opens `#/day/<date>?review=1` in the browser (`[web] open_on_recap`).
 
 ## 8. Privacy & security
