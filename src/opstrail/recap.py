@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from opstrail.config import Config
+from opstrail.events import is_focus_window
 from opstrail.render import command_lines, fmt_duration, hhmm
 from opstrail.store import Store
 
@@ -17,7 +18,7 @@ def build_recap(store: Store, cfg: Config, date: str) -> str:
     episodes = store.episodes_between(date)
     all_events = store.events_for_date(date)
     notes = [e for e in all_events if e["type"] == "note"]
-    active = sum(float(e.get("duration_s") or 0) for e in all_events if e["type"] == "window")
+    active = sum(float(e.get("duration_s") or 0) for e in all_events if is_focus_window(e))
     if not active:
         active = sum((ep.get("stats") or {}).get("active_s", 0) for ep in episodes)
     commands = sum(1 for e in all_events if e["type"] in ("shell", "ai"))

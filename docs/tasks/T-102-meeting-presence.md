@@ -2,7 +2,7 @@
 
 **Suggested owner:** Claude · **Phase:** A+ · **Size:** S
 
-**Status:** todo · **Priority:** 1
+**Status:** done · **Priority:** 1
 
 ## Goal
 Today a meeting is detected only while the Teams meeting window has focus. When you share your screen and

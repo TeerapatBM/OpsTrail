@@ -107,7 +107,7 @@ Every producer writes one JSON object per line to `~/.opstrail/inbox/<name>.json
 | type | `data` fields |
 |---|---|
 | `shell` | `cmd`*, `cwd`, `success`, `exit_code`, `shell`, `session` |
-| `window` | `app`*, `title`, `pid` (written by the agent with `duration_s`) |
+| `window` | `app`*, `title`, `pid`, `presence` (written by the agent with `duration_s`; `presence: true` = a meeting window open in the background while the user works elsewhere, not focus time) |
 | `note` | `text`*, `episode_id` |
 | `screenshot` | `path`*, `app`, `title`, `caption` |
 | `task` | `action`* (`start`/`stop`), `title` |
@@ -148,6 +148,16 @@ Incremental grouping (`opstrail.episodes.assign_episodes`), run on every refresh
    form one meeting episode (`origin = "meeting"`, title `ประชุม: <subject>`, tag `meeting`). Anything that
    happens inside a meeting's span (a glance at Outlook) belongs to the meeting. Work after a meeting starts
    a new episode.
+   **Background presence** (`[meetings] detect_background = true`, Windows): every poll the agent enumerates the
+   visible top-level windows (`EnumWindows` + `IsWindowVisible`); while one classifies as `meeting` and the user is
+   active in another window (e.g. sharing the screen and typing in a terminal), it records synthetic `window` segments
+   (`data.presence = true`, ≤ 5 min each, not while idle/paused, excluded apps/titles respected). They count as meeting
+   time (activity `meeting`) but not as focus/active time (`active_s`, window summaries, worklog totals; a
+   presence-only episode has `active_s = 0`). When presence starts or stops, the focused window's segment is cut at
+   that moment, so foreground work after the call never stretches the meeting.
+   Because these segments arrive every few minutes, a meeting that grows in a refresh takes back events an earlier
+   refresh put into an `auto` episode inside its new span; manual, merged, renamed (`title_locked`) and
+   document-referenced episodes are never touched, and a work episode left empty is deleted.
 9. A note written ≤ `[episodes] note_attach_min` (15) after an episode ended is attached to it (e.g. the
    meeting summary). Notes/tasks never stretch an episode's time span.
 10. After a meeting ≥ `[meetings] min_minutes` ends (no meeting window for `grace_minutes`), the agent asks

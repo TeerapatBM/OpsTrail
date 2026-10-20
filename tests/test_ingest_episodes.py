@@ -169,3 +169,48 @@ def test_project_tag_is_not_carried_over_a_gap(cfg, svc):
     svc.refresh()
     eps = svc.list_episodes(DAY)
     assert [e["tags"] for e in eps] == [["Splunk"], []]
+
+
+def presence(ts: str, title: str, dur: float) -> dict:
+    ev = window(ts, "ms-teams.exe", title, dur)
+    ev["data"]["presence"] = True
+    return ev
+
+
+def test_presence_only_meeting_has_no_active_time(cfg, svc):
+    """Foreground excluded during the call: presence spans the meeting but is not active time (T-102)."""
+    write_jsonl(cfg, "p", [presence(at(14, 0), "Vendor sync | Microsoft Teams", 300),
+                           presence(at(14, 5), "Vendor sync | Microsoft Teams", 300)])
+    svc.refresh()
+    meeting = next(e for e in svc.store.episodes_between(DAY) if e["origin"] == "meeting")
+    assert meeting["end_epoch"] - meeting["start_epoch"] == 600
+    assert meeting["stats"]["active_s"] == 0
+    assert "| เวลาทำงาน (active) | 0s |" in svc.daily_recap(DAY, save=False)["markdown"]
+
+
+def test_growing_meeting_reclaims_work_but_not_renamed_episodes(cfg, svc):
+    """Presence segments arrive every few minutes: work grouped in between moves into the meeting (T-102)."""
+    call = "Change review | Microsoft Teams"
+    write_jsonl(cfg, "a", [window(at(10, 0), "ms-teams.exe", call, 300), window(at(10, 5), "pwsh.exe", "PowerShell", 300),
+                           presence(at(10, 5), call, 300)])
+    svc.refresh()
+    write_jsonl(cfg, "b", [shell(at(10, 12), "Get-NetFirewallRule"), shell(at(10, 21), "Test-NetConnection fw01")])
+    svc.refresh()  # before the presence covering them is flushed: they land in a work episode
+    worked = {e["episode_id"] for e in svc.store.events_for_date(DAY) if e["type"] == "shell"}
+    assert len(worked) == 1
+    work_id = worked.pop()
+    assert svc.store.get_episode(work_id)["origin"] == "auto"
+    write_jsonl(cfg, "c", [presence(at(10, 10), call, 300)])
+    svc.refresh()  # meeting grows to 10:15 and takes the 10:12 command back
+    meeting = next(e for e in svc.store.episodes_between(DAY) if e["origin"] == "meeting")
+    by_cmd = {e["data"]["cmd"]: e["episode_id"] for e in svc.store.events_for_date(DAY) if e["type"] == "shell"}
+    assert by_cmd["Get-NetFirewallRule"] == meeting["id"]
+    assert by_cmd["Test-NetConnection fw01"] == work_id
+    svc.update_episode(work_id, title="Firewall check")  # the user renamed it -> leave it alone
+    write_jsonl(cfg, "d", [presence(at(10, 15), call, 600)])
+    svc.refresh()
+    assert svc.store.get_event(next(e["id"] for e in svc.store.events_for_date(DAY)
+                                    if e["data"].get("cmd") == "Test-NetConnection fw01"))["episode_id"] == work_id
+    meeting = svc.store.get_episode(meeting["id"])
+    assert meeting["end_epoch"] - meeting["start_epoch"] == 25 * 60
+    assert meeting["stats"]["active_s"] == 600  # focus windows only; presence is not counted twice

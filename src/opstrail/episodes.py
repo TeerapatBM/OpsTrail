@@ -8,6 +8,7 @@ from collections import Counter
 from typing import Any
 
 from opstrail.config import Config
+from opstrail.events import is_focus_window
 from opstrail.store import Store
 
 APP_NAMES = {
@@ -138,8 +139,9 @@ def compute_stats(events: list[dict[str, Any]], projects: dict[str, list[str]] |
         weight = 1.0
         if t == "window":
             dur = float(ev.get("duration_s") or 0.0)
-            window_s += dur
-            apps[app_display(d.get("app"))] += dur
+            if is_focus_window(ev):  # background meeting presence overlaps focus time: count it once
+                window_s += dur
+                apps[app_display(d.get("app"))] += dur
             weight = max(1.0, dur / 30.0)
             text = str(d.get("title") or "")
         elif t in ("shell", "ai"):
@@ -173,7 +175,10 @@ def compute_stats(events: list[dict[str, Any]], projects: dict[str, list[str]] |
             chats[subj] += float(ev.get("duration_s") or 1.0)
         elif act == "console" and subj:
             consoles[subj] += float(ev.get("duration_s") or 1.0)
-    active_s = window_s if window_s > 0 else max(0.0, end - start)
+    # without focus windows, fall back to the span of the user's own events (presence is not active time)
+    own = [e for e in timed if e["type"] != "window" or is_focus_window(e)]
+    own_span = max(_span(e)[1] for e in own) - min(_span(e)[0] for e in own) if own else 0.0
+    active_s = window_s if window_s > 0 else max(0.0, own_span)
     return {
         "start_epoch": start,
         "end_epoch": end,
@@ -341,6 +346,9 @@ def _assign_for_date(store: Store, cfg: Config, date: str, now: float) -> set[in
             ep["_subject"] = blk["subject"]
         for ev in blk["events"]:
             assign(ev, ep)
+    if blocks and _reclaim_for_meetings(store, cfg, date, episodes, touched):
+        work_eps = [e for e in episodes if e.get("origin") != "meeting"]
+        current = max(work_eps, key=lambda e: e["end_epoch"]) if work_eps else None
     events = [e for e in events if e.get("activity") != "meeting"]
     if not events:
         _flush(store, cfg, episodes, pending, touched)
@@ -428,6 +436,50 @@ def _assign_for_date(store: Store, cfg: Config, date: str, now: float) -> set[in
 
     _flush(store, cfg, episodes, pending, touched)
     return touched
+
+
+def _reclaim_for_meetings(
+    store: Store, cfg: Config, date: str, episodes: list[dict[str, Any]], touched: set[int]
+) -> bool:
+    """A meeting that grew in this pass (e.g. a background-presence segment flushed every few minutes while
+    the user shares the screen) takes back work an earlier refresh put into an auto episode inside its new
+    span. User-shaped episodes (manual, merged, renamed, used by a document) are left alone. Returns True
+    when work episodes changed."""
+    meetings = [ep for ep in episodes if ep.get("origin") == "meeting" and ep["id"] in touched]
+    if not meetings:
+        return False
+    protected = store.episodes_referenced_by_docs()
+    movable = {
+        ep["id"]
+        for ep in episodes
+        if ep.get("origin") == "auto" and not ep.get("title_locked") and ep["id"] not in protected
+    }
+    if not movable:
+        return False
+    moved: dict[int, list[int]] = {}
+    losers: set[int] = set()
+    for ev in store.events_for_date(date):
+        if ev.get("episode_id") not in movable:
+            continue
+        s = float(ev["epoch"])
+        host = next((m for m in meetings if m["start_epoch"] <= s < m["end_epoch"]), None)
+        if host is not None:
+            moved.setdefault(host["id"], []).append(ev["id"])
+            losers.add(int(ev["episode_id"]))
+    for eid, ids in moved.items():
+        store.assign_events(ids, eid)
+    for eid in losers:
+        idx = next(i for i, ep in enumerate(episodes) if ep["id"] == eid)
+        if not store.events_for_episode(eid):
+            store.delete_episode(eid)
+            episodes.pop(idx)
+            touched.discard(eid)
+            continue
+        refresh_episode(store, eid, cfg)
+        fresh = store.get_episode(eid)
+        if fresh is not None:
+            episodes[idx] = fresh
+    return bool(losers)
 
 
 def _flush(

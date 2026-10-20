@@ -50,7 +50,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
-- T-101 browser extension (GPT) · T-102 meeting presence while screen sharing (Claude) · T-103 voice note (GPT)
+- T-101 browser extension (GPT) · T-103 voice note (GPT)
 - T-104 web diff + streaming (GPT) · T-105 Teams digest (GPT) · T-106 PowerShell output capture (Claude)
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
@@ -86,11 +86,20 @@ Older backlog items (kept for reference):
 - v0.2.0 local web UI + LLM providers — Claude, 2026-10-20 (`web/`, `llm.py`, `secretstore.py`, service web helpers).
 - v0.3.1 duo autopilot — Claude, 2026-10-20 (`scripts/duo.ps1`, `scripts/duo/`, `setup/claude`, `setup/codex`, cards, workflow, docs).
 - v0.3.0 Phase A quality loop — Claude, 2026-10-20 (`activity.py`, `quality.py`, `evals.py`, episodes meetings, web, setup/github, docs/tasks).
+- T-102 meeting presence while screen sharing — Claude, 2026-10-20. Agent enumerates visible windows each poll; an open
+  meeting window while focus is elsewhere → `window` segments with `data.presence = true`; a growing meeting reclaims
+  work grouped into auto episodes inside its span; presence is meeting time, not focus time. Files: `agent/winapi.py`,
+  `agent/osapi.py`, `agent/daemon.py`, `episodes.py`, `events.py`, `render.py`, `recap.py`, `service.py`, `config.py`,
+  `evals/` (screen-share-day), tests, SPEC §4/§5, README.
+  Round 2 (GPT review): focus segment is split when presence starts/stops (`Agent._split_focus`); presence-only
+  episodes report `active_s = 0` (fallback span ignores presence). Tests in `test_agent.py`, `test_ingest_episodes.py`.
 
 ## Review requests
 
 - [ ] GPT: review `src/opstrail/episodes.py` grouping heuristics and `export.py` markdown→docx edge cases.
 - [ ] GPT: review `web/static/app.js` (renderMd escaping, editor dirty-state) and `web/app.py` LocalOnly middleware.
+- [ ] GPT (Codex): review T-102 — `Agent.presence_tick` in `agent/daemon.py`, `winapi.top_level_windows`, and
+  `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
 
@@ -115,3 +124,21 @@ Older backlog items (kept for reference):
   commits, gates and merges; merge needs gate green + APPROVE from the *other* model + CI. Claude runs with
   `--permission-mode dontAsk` + allow/deny files (deterministic, no classifier); Codex with `--full-auto`
   (fallback: full access inside the worktree when the Windows sandbox is unavailable), reviewer read-only.
+- 2026-10-20 — T-102 (Claude): background meeting presence is a normal `window` event with `data.presence = true`
+  (no new event type, schema stays v1). It counts as meeting activity but is excluded from focus/active time
+  (`events.is_focus_window`) so screen-sharing time is not counted twice.
+- 2026-10-20 — T-102 (Claude): presence segments are flushed every 5 min, so commands typed during the call can be
+  grouped into a work episode before the meeting span covers them. Instead of flushing presence on every refresh
+  (many tiny events), a meeting that grows takes those events back from `auto` episodes (`_reclaim_for_meetings`).
+  This relaxes "events never move" for un-renamed, un-referenced auto episodes only; an emptied one is deleted.
+- 2026-10-20 — T-102 (Claude): presence is recorded only while the user is active (not idle/paused), as the card
+  says — a forgotten open meeting window must not create an all-night meeting. Listening without touching the
+  mouse for > `idle_threshold_s` still ends the segment (unchanged behaviour). Not on Linux/macOS (`top_level_windows`
+  returns `[]`).
+- 2026-10-20 — T-102 round 2 (Claude, after GPT review): a meeting attended only in the background (foreground
+  excluded/none) has `active_s = 0` — presence proves the call was open, not that the user was working, and it may
+  overlap focus time kept in a protected episode. The episode's start/end still span the call. A short call inside
+  continuous work still leaves the before/after work in one auto episode (rule 3, gap < `idle_split_min`); only the
+  focus segments are cut at the call boundaries.
+- 2026-10-20 — `test_hotkey_parse_and_match` failed on every Windows run (it read the real keyboard via
+  `GetAsyncKeyState`); the test now stubs `_current_mods`. Test-only change, no behaviour change.

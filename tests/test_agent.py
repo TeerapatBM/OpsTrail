@@ -15,6 +15,7 @@ class FakeOS:
         self.now = t0
         self.fg = {"app": "pwsh.exe", "title": "PowerShell", "pid": 1, "hwnd": 1}
         self.idle = 0.0
+        self.wins: list[tuple[str, str]] = []
 
     def clock(self):
         return self.now
@@ -25,6 +26,9 @@ class FakeOS:
     def idle_seconds(self):
         return self.idle
 
+    def windows(self):
+        return list(self.wins)
+
 
 @pytest.fixture()
 def fake(cfg):
@@ -33,7 +37,9 @@ def fake(cfg):
 
 
 def make_agent(svc, fake):
-    return Agent(svc, foreground=fake.foreground, idle_seconds=fake.idle_seconds, clock=fake.clock)
+    return Agent(
+        svc, foreground=fake.foreground, idle_seconds=fake.idle_seconds, clock=fake.clock, windows=fake.windows
+    )
 
 
 def windows(svc):
@@ -95,6 +101,111 @@ def test_long_focus_is_persisted_in_segments(svc, fake):
     assert len(windows(svc)) == 2  # 13 minutes -> two 5-minute segments flushed so far
 
 
+MEETING_WIN = ("ms-teams.exe", "Weekly SOC sync | Microsoft Teams")
+PWSH = {"app": "pwsh.exe", "title": "PowerShell", "pid": 1, "hwnd": 1}
+EDGE = {"app": "msedge.exe", "title": "Splunk docs - Microsoft Edge", "pid": 2, "hwnd": 2}
+TEAMS = {"app": MEETING_WIN[0], "title": MEETING_WIN[1], "pid": 3, "hwnd": 3}
+
+
+def run_minutes(agent, fake, minutes: int, fg=None, wins=None) -> None:
+    if fg is not None:
+        fake.fg = fg
+    if wins is not None:
+        fake.wins = wins
+    for _ in range(minutes):
+        agent.tick()  # refresh + meeting_tick run on every tick (60s > REFRESH_EVERY_S)
+        fake.now += 60
+
+
+def test_meeting_presence_while_screen_sharing(svc, fake, cfg, monkeypatch):
+    popups = []
+    monkeypatch.setattr("opstrail.agent.daemon.osapi.spawn_popup", lambda args: popups.append((fake.now, args)) or True)
+    agent = make_agent(svc, fake)
+    t0 = fake.now  # 09:00
+    other = [("pwsh.exe", "PowerShell"), ("explorer.exe", "Downloads")]
+
+    run_minutes(agent, fake, 10, PWSH, other)                     # 09:00 work before the call
+    run_minutes(agent, fake, 5, TEAMS, [MEETING_WIN, *other])     # 09:10 meeting has focus
+    run_minutes(agent, fake, 6, PWSH)                             # 09:15 share screen, work in the terminal
+    svc.record("shell", {"cmd": "Get-Service splunkd"}, source="powershell",
+               ts=datetime.fromtimestamp(t0 + 21 * 60, cfg.tz))  # 09:21 – before the presence covering it is flushed
+    run_minutes(agent, fake, 4, PWSH)
+    run_minutes(agent, fake, 3, EDGE)                             # 09:25
+    run_minutes(agent, fake, 12, PWSH)                            # 09:28
+    assert not popups, "no summary popup while the meeting window is still open"
+    run_minutes(agent, fake, 5, TEAMS)                            # 09:40 back to the meeting
+    run_minutes(agent, fake, 15, PWSH, other)                     # 09:45 call ended, window closed
+    agent.flush(fake.now)
+    agent.flush_presence(fake.now)
+    svc.refresh()
+
+    events = svc.store.events_for_date("2026-10-19")
+    presence = [e for e in events if e["type"] == "window" and e["data"].get("presence")]
+    assert presence and all(e["data"]["app"] == "ms-teams.exe" and e["activity"] == "meeting" for e in presence)
+    assert min(e["epoch"] for e in presence) == t0 + 15 * 60
+    assert max(e["epoch"] + e["duration_s"] for e in presence) == t0 + 40 * 60
+
+    eps = svc.store.episodes_between("2026-10-19")
+    meetings = [e for e in eps if e["origin"] == "meeting"]
+    assert len(meetings) == 1
+    m = meetings[0]
+    assert (m["start_epoch"], m["end_epoch"]) == (t0 + 10 * 60, t0 + 45 * 60)  # the whole call
+    assert m["stats"]["meeting_subject"] == "Weekly SOC sync"
+    # foreground work during the call stays in the meeting episode
+    during = [e for e in events if t0 + 10 * 60 <= e["epoch"] < t0 + 45 * 60]
+    assert during and all(e["episode_id"] == m["id"] for e in during)
+    shell_ev = next(e for e in events if e["type"] == "shell")
+    assert shell_ev["episode_id"] == m["id"]
+    # no work episode overlaps the call; presence does not double-count active time
+    for ep in eps:
+        if ep["origin"] != "meeting":
+            assert ep["end_epoch"] <= m["start_epoch"] or ep["start_epoch"] >= m["end_epoch"], ep
+    assert m["stats"]["active_s"] == 35 * 60
+    # the summary popup comes only after the call really ended (+ grace)
+    assert [args[0] for _, args in popups] == ["meeting"]
+    assert popups[0][0] >= t0 + 48 * 60
+
+
+def test_meeting_boundary_splits_the_focused_segment(svc, fake):
+    """The call starts and ends while the terminal keeps focus: work after the call stays out of the meeting."""
+    agent = make_agent(svc, fake)
+    t0 = fake.now  # 09:00
+    run_minutes(agent, fake, 2, PWSH, [])                # 09:00 terminal, no call yet
+    run_minutes(agent, fake, 3, PWSH, [MEETING_WIN])     # 09:02 call running in the background
+    run_minutes(agent, fake, 4, PWSH, [])                # 09:05 call closed, terminal still focused
+    agent.flush(fake.now)
+    agent.flush_presence(fake.now)
+    svc.refresh()
+
+    focus = [(w["epoch"] - t0, w["duration_s"]) for w in windows(svc) if not w["data"].get("presence")]
+    assert focus == [(0, 120), (120, 180), (300, 240)]
+    eps = svc.store.episodes_between("2026-10-19")
+    m = next(e for e in eps if e["origin"] == "meeting")
+    assert (m["start_epoch"], m["end_epoch"]) == (t0 + 120, t0 + 300)
+    assert m["stats"]["active_s"] == 180
+    after = next(w for w in windows(svc) if w["epoch"] == t0 + 300)
+    assert after["episode_id"] != m["id"]  # terminal work after the call is not part of the meeting
+
+
+def test_meeting_presence_can_be_disabled(svc, fake, home):
+    (home / "config.toml").write_text(
+        (home / "config.toml").read_text(encoding="utf-8") + "\n[meetings]\ndetect_background = false\n",
+        encoding="utf-8",
+    )
+    from opstrail.config import load_config
+    from opstrail.service import OpsTrail
+
+    svc2 = OpsTrail(load_config(home))
+    try:
+        agent = make_agent(svc2, fake)
+        run_minutes(agent, fake, 6, PWSH, [MEETING_WIN])
+        agent.flush_presence(fake.now)
+        assert agent.presence is None
+        assert not [e for e in windows(svc2) if e["data"].get("presence")]
+    finally:
+        svc2.store.close()
+
+
 def test_recap_tick_creates_recap_once(svc, fake, cfg):
     agent = make_agent(svc, fake)
     agent.tick()
@@ -113,6 +224,7 @@ def test_hotkey_parse_and_match():
     assert parse_combo("<ctrl>+<alt>+n") == (frozenset({"ctrl", "alt"}), "n")
     fired = []
     m = HotkeyMatcher({"<ctrl>+<alt>+n": lambda: fired.append("n")})
+    m._current_mods = lambda: frozenset(m.pressed)  # on Windows it asks the real keyboard (GetAsyncKeyState)
 
     class K:  # pynput-like key objects
         def __init__(self, name=None, vk=None, char=None):

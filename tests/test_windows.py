@@ -34,6 +34,29 @@ def test_winapi_calls_do_not_crash():
     assert winapi.window_rect(0) is None
 
 
+def test_top_level_windows_finds_a_visible_window():
+    from opstrail.agent import winapi
+
+    wins = winapi.top_level_windows()
+    assert isinstance(wins, list)
+    assert all(isinstance(app, str) and app and isinstance(title, str) and title for app, title in wins)
+    try:
+        import tkinter
+
+        root = tkinter.Tk()
+    except Exception as exc:  # runner without an interactive desktop / Tk
+        pytest.skip(f"no desktop: {exc}")
+    title = f"OpsTrail test window {os.getpid()}"
+    try:
+        root.title(title)
+        root.geometry("120x60")
+        root.update()
+        found = [app for app, t in winapi.top_level_windows() if t == title]
+    finally:
+        root.destroy()
+    assert found and found[0].lower().startswith("python"), found
+
+
 def test_register_hotkey_thread_starts_and_stops():
     from opstrail.agent.hotkeys import WinHotkeys
 

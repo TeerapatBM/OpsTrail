@@ -12,7 +12,7 @@ from typing import Any
 from opstrail import __version__
 from opstrail.config import Config, load_config
 from opstrail.episodes import assign_episodes, merge_episodes, rebuild_episodes, refresh_episode
-from opstrail.events import make_event
+from opstrail.events import is_focus_window, make_event
 from opstrail.export import export_markdown, markdown_to_docx, shot_resolver, slugify
 from opstrail.ingest import ingest_inbox, store_event
 from opstrail.locks import file_lock
@@ -536,7 +536,7 @@ class OpsTrail:
         d = _validate_date(date, self.cfg)
         episodes = self.list_episodes(d)
         events = self.store.events_for_date(d)
-        active = sum(float(e.get("duration_s") or 0) for e in events if e["type"] == "window")
+        active = sum(float(e.get("duration_s") or 0) for e in events if is_focus_window(e))
         if not active:
             active = sum((ep.get("stats") or {}).get("active_s", 0) for ep in self.store.episodes_between(d))
         counts = self.store.count_events(d)
