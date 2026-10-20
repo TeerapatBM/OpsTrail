@@ -44,6 +44,14 @@
 
 ใน PowerShell มีคำสั่งลัด: `ot-note "..."`, `ot-task start "..."`, `ot-task stop`, `ot-shot --delay 3`
 
+**เก็บผลลัพธ์ของคำสั่ง (opt-in)** — ให้ SOP มีหัวข้อ "ผลลัพธ์ที่คาดหวัง" จากผลจริง เช่น `Status: Running`,
+`TcpTestSucceeded : True`: ตั้ง `[capture] shell_output = true` ใน `config.toml` แล้วเปิด PowerShell หน้าต่างใหม่
+hook จะเปิด `Start-Transcript` ของแต่ละหน้าต่างไว้ใน `~/.opstrail/transcripts/` และเก็บเฉพาะ **15 บรรทัดแรก**
+ของผลลัพธ์แต่ละคำสั่ง (`shell_output_lines`) ซึ่งผ่านการ redact secret ก่อนบันทึกเหมือนคำสั่ง
+- ไฟล์ transcript มีผลลัพธ์ดิบ (ยังไม่ redact) — ถูกลบเมื่อพิมพ์ `exit`; ถ้าปิดหน้าต่างด้วย X จะถูกลบตอนเปิด PowerShell ครั้งถัดไป (ไฟล์เก่ากว่า 12 ชม.)
+- รองรับเฉพาะ PowerShell (bash/zsh ยังไม่เก็บผลลัพธ์) · ถ้าสั่ง `Stop-Transcript` เองจะหยุดของ OpsTrail ด้วย (คำสั่งยังถูกบันทึกตามปกติ)
+- ตอน pause ผลลัพธ์ยังอยู่ในไฟล์ transcript ชั่วคราว แต่ไม่ถูกนำเข้า OpsTrail
+
 ตอน 18:00 (ตั้งได้) จะสร้าง Daily worklog ให้ และเปิดหน้าเว็บให้ทบทวนชื่องาน + เติมโน้ต
 
 **ประชุม** (Teams / Zoom / Google Meet) ถูกแยกเป็นงานของตัวเองพร้อมเวลาเป๊ะ — พอประชุมจบ (≥10 นาที) จะมีหน้าต่าง
@@ -131,6 +139,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Status              
 [capture]
 exclude_apps = ["line.exe", "keepass.exe"]
 auto_screenshot_title_patterns = ["(?i)vSphere Client", "(?i)Microsoft Azure"]
+shell_output = true          # เก็บผลลัพธ์คำสั่ง PowerShell (15 บรรทัดแรก) ไว้ทำ "ผลลัพธ์ที่คาดหวัง"
 
 [recap]
 time = "17:30"
@@ -168,6 +177,7 @@ opstrail purge --date|--before | install-claude [--remove]
 | อาการ | ทางแก้ |
 |---|---|
 | ไม่มีคำสั่ง PowerShell ใน timeline | เปิดหน้าต่างใหม่, ตรวจว่า profile มีบรรทัด `OpsTrail.ps1` และอยู่ **ท้ายสุด** (หลัง oh-my-posh) |
+| เปิด `shell_output` แล้วไม่มีผลลัพธ์ใน source pack | เปิด PowerShell หน้าต่างใหม่ (hook อ่าน config ตอนเปิด), ตรวจว่ามีไฟล์ใน `~/.opstrail/transcripts/` — host ที่ไม่รองรับ `Start-Transcript` จะบันทึกแค่คำสั่ง |
 | ปุ่มลัดไม่ทำงาน | ดู `~/.opstrail/logs/agent.log` — ถ้าเขียนว่า "could not be registered" แปลว่าโปรแกรมอื่นจองปุ่มนั้นไว้ ให้เปลี่ยนใน `[hotkeys]` ของ config แล้ว restart agent |
 | Claude Desktop ไม่เห็น opstrail | `opstrail install-claude` แล้ว quit Claude จาก tray แล้วเปิดใหม่ |
 | VS Code ไม่เห็น tools | เปิด `.vscode/mcp.json` → กด Start, ใช้ Chat แบบ Agent mode |

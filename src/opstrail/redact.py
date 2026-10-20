@@ -12,8 +12,8 @@ _QUOTED_OR_WORD = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|]+)"
 # (pattern, replacement). Replacements keep the "label" part so the document
 # still says *that* a secret was used, without the value.
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    # PEM private keys (multi-line)
-    (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----", re.S), MASK),
+    # PEM private keys (multi-line; a block cut off by output truncation is masked to the end)
+    (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)", re.S), MASK),
     # Authorization headers / bearer tokens
     (re.compile(r"(?i)(authorization\s*[:=]\s*(?:bearer|basic|token)\s+)[A-Za-z0-9._~+/=-]+"), r"\1" + MASK),
     (re.compile(r"(?i)(\bbearer\s+)[A-Za-z0-9._~+/=-]{16,}"), r"\1" + MASK),
@@ -44,10 +44,10 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1" + MASK,
     ),
-    # key=value / key: value pairs
+    # key=value / key: value pairs (also env-style SPLUNK_PASSWORD=…, e.g. a printed .env file)
     (
         re.compile(
-            r"(?i)(\b(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|client[_-]?secret|"
+            r"(?i)(\b(?:[a-z0-9]+_)*(?:password|passwd|pwd|secret|token|api[_-]?key|apikey|client[_-]?secret|"
             r"access[_-]?key|secret[_-]?key|private[_-]?key|aws_secret_access_key|passphrase)"
             r"\s*[:=]\s*)" + _QUOTED_OR_WORD
         ),

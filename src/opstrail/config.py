@@ -38,6 +38,8 @@ min_window_s = 3             # หน้าต่างที่โฟกัส�
 screenshot_mode = "window"   # window = เฉพาะหน้าต่างที่ใช้งาน, screen = ทั้งจอ
 auto_screenshot_title_patterns = []   # regex ของ title ที่ให้ถ่ายรูปอัตโนมัติเมื่อสลับเข้า
 auto_screenshot_min_interval_s = 120
+shell_output = false         # true = เก็บผลลัพธ์ของคำสั่ง PowerShell (บรรทัดแรกๆ) ไว้เขียน "ผลลัพธ์ที่คาดหวัง" ใน SOP (เปิด PowerShell ใหม่ให้มีผล)
+shell_output_lines = 15      # เก็บผลลัพธ์กี่บรรทัดต่อคำสั่ง
 exclude_apps = [
   "line.exe", "whatsapp.exe", "telegram.exe", "messenger.exe",
   "keepass.exe", "keepassxc.exe", "1password.exe", "bitwarden.exe",

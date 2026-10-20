@@ -2,7 +2,7 @@
 
 **Suggested owner:** Claude · **Phase:** B · **Size:** M
 
-**Status:** todo · **Priority:** 3
+**Status:** done · **Priority:** 3
 
 ## Goal
 SOPs need the expected output of each step. Capture the first N lines of each PowerShell command's output.
@@ -15,6 +15,7 @@ SOPs need the expected output of each step. Capture the first N lines of each Po
 - Source pack shows output under each command (max 15 lines) so the AI can write "ผลลัพธ์ที่คาดหวัง".
 
 ## Acceptance criteria
-- [ ] Windows test (tests/test_windows.py) running the hook in PS 5.1 with a command that prints output
-- [ ] redaction test: secrets in output are masked
-- [ ] eval: new case where the SOP must mention a value that only appears in command output
+- [x] Windows test (tests/test_windows.py) running the hook in PS 5.1 with a command that prints output
+- [x] redaction test: secrets in output are masked
+- [x] eval: new case where the SOP must mention a value that only appears in command output
+  (`sop-output-day`: deterministic `[case.pack] must_contain` + `--llm` `must_mention`)

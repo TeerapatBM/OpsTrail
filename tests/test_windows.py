@@ -106,3 +106,72 @@ prompt | Out-Null
     assert "P@ssw0rd!" not in cmds[1] and "[REDACTED]" in cmds[1]
     assert shells[0]["duration_s"] == pytest.approx(2, abs=0.1)
     assert shells[0]["data"]["shell"].startswith("powershell 5.1")
+    assert "output" not in shells[0]["data"]  # output capture is opt-in
+    assert not (cfg.home / "transcripts").exists()
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_hook_captures_output(home):
+    """T-106: with [capture] shell_output = true the hook transcribes the session and attaches each command's output."""
+    from opstrail.config import load_config
+    from opstrail.service import OpsTrail
+
+    with (home / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n[capture]\nshell_output = true   # opt-in\nshell_output_lines = 15\n")
+    cfg = load_config(home)
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    # Output is written to the host (and so to the transcript) before each command's history entry + prompt,
+    # like an interactive session; the console host also echoes "PS C:\work> <command>" first.
+    script = f"""
+$ErrorActionPreference = 'Stop'
+. '{hook}'
+if (-not $global:OpsTrailTranscript) {{ throw 'transcript not started' }}
+$t = Get-Date
+$host.UI.WriteLine('PS C:\\work> Get-Service splunkd')
+'Status   Name               DisplayName'
+'------   ----               -----------'
+'Running  splunkd            Splunkd Service'
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Service splunkd'; ExecutionStatus='Completed'; StartExecutionTime=$t; EndExecutionTime=$t.AddSeconds(1)}})
+prompt | Out-Null
+1..40 | ForEach-Object {{ "log line $_" }}
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Content splunkd.log -Tail 40'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(5); EndExecutionTime=$t.AddSeconds(6)}})
+prompt | Out-Null
+'SPLUNK_HOST=10.10.20.5'
+'SPLUNK_PASSWORD=Pa55w0rd!Uf'
+'admin password: Pa55w0rd!Uf'
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Content .\\uf.env'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(10); EndExecutionTime=$t.AddSeconds(11)}})
+prompt | Out-Null
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Set-Location C:\\work'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(15); EndExecutionTime=$t.AddSeconds(15)}})
+prompt | Out-Null
+prompt | Out-Null
+"""
+    env = {**os.environ, "OPSTRAIL_HOME": str(cfg.home)}
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    svc = OpsTrail(cfg)
+    try:
+        svc.refresh()
+        shells = [e for e in svc.store.events_for_date(cfg.today()) if e["type"] == "shell"]
+        by_cmd = {e["data"]["cmd"]: e["data"] for e in shells}
+        assert len(shells) == 4, list(by_cmd)
+
+        svc_out = by_cmd["Get-Service splunkd"]["output"]
+        assert svc_out.splitlines()[0].startswith("Status") and "PS C:\\work>" not in svc_out
+        assert "Running  splunkd" in svc_out and "output_truncated" not in by_cmd["Get-Service splunkd"]
+
+        log = by_cmd["Get-Content splunkd.log -Tail 40"]
+        assert log["output"].splitlines() == [f"log line {i}" for i in range(1, 16)]  # first 15 lines only
+        assert log["output_truncated"] is True
+
+        env_out = by_cmd["Get-Content .\\uf.env"]["output"]
+        assert "Pa55w0rd!Uf" not in env_out and env_out.count("[REDACTED]") == 2
+        assert "SPLUNK_HOST=10.10.20.5" in env_out and "log line" not in env_out
+
+        assert "output" not in by_cmd["Set-Location C:\\work"]  # no output -> no field
+    finally:
+        svc.store.close()
+    # the transcript holds raw (unredacted) output: removed when the shell exits
+    assert list((cfg.home / "transcripts").glob("*.txt")) == []

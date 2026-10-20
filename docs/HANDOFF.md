@@ -51,7 +51,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - T-101 browser extension (GPT) · T-103 voice note (GPT)
-- T-105 Teams digest (GPT) · T-106 PowerShell output capture (Claude)
+- T-105 Teams digest (GPT) · ~~T-106 PowerShell output capture (Claude)~~ done
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
 
@@ -65,7 +65,7 @@ Older backlog items (kept for reference):
    `templates/<type>/examples/`, company Word template as `reference.docx`, adapt `skeleton.md` / `guide.md`.
 3. [ ] **Teams digest** at recap time: optional `[recap] teams_webhook_url` (Power Automate Workflows webhook),
    post a short Adaptive Card with today's work items + link to the doc. _suggested: GPT_
-4. [ ] **PowerShell output capture** (opt-in): `Start-Transcript` per session, attach the first N lines of output
+4. [x] (T-106) **PowerShell output capture** (opt-in): `Start-Transcript` per session, attach the first N lines of output
    to each shell event for "expected result" sections in SOPs. _suggested: Claude_
 5. [ ] **Tray icon** (pystray): status, pause/resume, open today's recap, open exports folder. _suggested: GPT_
 6. [ ] **Better episode titles** using MCP sampling (ask the client model for a 6-word title) with fallback
@@ -82,6 +82,11 @@ Older backlog items (kept for reference):
 
 ## Done
 
+- T-106 PowerShell output capture (opt-in) — Claude, 2026-10-20. `[capture] shell_output` → hook runs `Start-Transcript`
+  per session, slices it in `prompt` into `data.output` (first `shell_output_lines`); ingest redacts, drops it unless
+  opted in, cuts lines; source pack shows `│` output under each command; eval case `sop-output-day` (+ `[case.pack]`).
+  Files: `hooks/powershell/OpsTrail.ps1`, `config.py`, `events.py`, `redact.py`, `render.py`, `evals.py`, `evals/`,
+  `tests/test_shell_output.py`, `tests/test_windows.py`, SPEC §3/§4/§4a/§6b/§8, README, card.
 - T-104 web diff + streaming — GPT, 2026-10-20. Added difflib saved-version API + Thai word comparison;
   Anthropic/OpenAI/Azure SSE into the editor, save-on-success + fact-check, safe failure recovery.
   Files: `service.py`, `llm.py`, `web/app.py`, `web/static/app.js`, `app.css`, `tests/test_web.py`, `tests/web_editor_smoke.cjs`, SPEC/README/card/plan.
@@ -100,6 +105,9 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] GPT (Codex): review T-106 — transcript slicing in `hooks/powershell/OpsTrail.ps1` (`Read-OpsTrailTranscript`,
+  `Format-OpsTrailOutput`: echo-line stripping, offset handling, cleanup), `events._shell_output`, the two redaction
+  pattern changes in `redact.py` (env-style `*_PASSWORD=`, truncated PEM) and `render.command_lines(with_output=)`.
 - [ ] Claude (Claude Code): review T-104 provider terminal/error handling, save-once lifecycle, Thai word diff,
   and editor state/escaping; run pytest + eval (shared Python launcher is inaccessible in Codex sandbox).
 - [ ] GPT: review `src/opstrail/episodes.py` grouping heuristics and `export.py` markdown→docx edge cases.
@@ -109,6 +117,22 @@ Older backlog items (kept for reference):
 
 ## Decision log
 
+- 2026-10-20 — T-106 (Claude): the hook reads `[capture] shell_output(_lines)` from config.toml with a tiny line-based
+  TOML reader when the shell starts (no Python call per shell → no startup cost); changes need a new PowerShell window.
+  Ingest enforces the opt-in too: `data.output` from any producer is dropped unless `shell_output = true`, and cut to
+  `shell_output_lines` (the hook also cuts, so raw output never reaches the inbox in full).
+- 2026-10-20 — T-106 (Claude): the transcript is read from a byte offset that advances on *every* prompt (also empty
+  Enter / paused), ≤ 64 KB per command; the leading `PS …> <cmd>` echo is dropped by matching the command's first
+  line in the first 5 lines. Transcripts hold raw output, so they are deleted on `exit` (`PowerShell.Exiting`) and
+  files > 12 h old are removed at the next shell start (a live shell keeps its file locked). The transcript keeps
+  running while paused (stopping it could stop a user's own nested transcript); nothing is ingested while paused.
+- 2026-10-20 — T-106 (Claude): redaction now runs on output that may be cut mid-block, so the PEM pattern also masks a
+  `BEGIN … PRIVATE KEY` with no END up to the end of the string; `key=value` now matches env-style prefixes
+  (`SPLUNK_PASSWORD=`, `DB_API_KEY:`) because printed .env/config files are the most likely secret in output.
+- 2026-10-20 — T-106 (Claude): source pack shows ≤ 15 output lines per command (card), `    │ ` prefix inside the
+  existing ```text block; the daily worklog and AI-title prompts stay command-only. Output is not added to event
+  `text` (search/timeline) to keep the timeline compact. Eval gets a deterministic `[case.pack] must_contain` check so
+  CI (no LLM) proves output-only values reach the pack; `--llm` adds `must_mention`.
 - 2026-10-20 — T-104 (GPT): Keep stdlib-only SSE adapters and the existing synchronous generation path;
   POST fetch streaming retains X-OpsTrail protection. Save only after provider terminal success, emitting
   one `done` with the saved draft + fact-check. Failed streams emit a generic/safe error without upstream

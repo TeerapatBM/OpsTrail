@@ -103,6 +103,8 @@ def normalize(event: dict[str, Any], cfg: Config) -> dict[str, Any]:
         duration = None if duration in (None, "") else max(0.0, float(duration))
     except (TypeError, ValueError):
         duration = None
+    if type_ == "shell":
+        data = _shell_output(data, cfg)
     data = _clip(data)
     row = {
         "ts": dt.isoformat(timespec="seconds"),
@@ -118,6 +120,30 @@ def normalize(event: dict[str, Any], cfg: Config) -> dict[str, Any]:
     row["text"] = event_text(type_, data)
     row["hash"] = event_hash(row)
     return row
+
+
+def _shell_output(data: dict[str, Any], cfg: Config) -> dict[str, Any]:
+    """Opt-in command output (`data.output`): dropped unless `[capture] shell_output`, else cut to N lines."""
+    if "output" not in data and "output_truncated" not in data:
+        return data
+    data = dict(data)
+    output = data.pop("output", None)
+    truncated = bool(data.pop("output_truncated", False))
+    try:
+        max_lines = int(cfg.capture.get("shell_output_lines") or 0)
+    except (TypeError, ValueError):
+        max_lines = 0
+    if not cfg.capture.get("shell_output") or max_lines <= 0 or not isinstance(output, str):
+        return data
+    lines = output.replace("\r\n", "\n").replace("\r", "\n").strip("\n").split("\n")
+    if len(lines) > max_lines:
+        lines, truncated = lines[:max_lines], True
+    text = "\n".join(line.rstrip() for line in lines).strip("\n")
+    if text:
+        data["output"] = text
+        if truncated:
+            data["output_truncated"] = True
+    return data
 
 
 def event_hash(row: dict[str, Any]) -> str:
