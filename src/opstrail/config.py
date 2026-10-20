@@ -32,6 +32,8 @@ templates_dir = ""     # ว่าง = <repo>/templates
 author = ""            # ชื่อผู้จัดทำที่ใส่ในเอกสาร (ว่าง = user)
 
 [capture]
+browser_keep_query = false
+exclude_domains = ["mail.google.com", "outlook.live.com", "mail.yahoo.com", "proton.me", "kasikornbank.com", "kbank.co.th", "scb.co.th", "krungthai.com", "bangkokbank.com", "krungsri.com"]
 poll_interval_s = 5          # ตรวจหน้าต่างที่ใช้งานทุกกี่วินาที
 idle_threshold_s = 300       # ไม่ขยับเมาส์/คีย์บอร์ดเกินนี้ = idle
 min_window_s = 3             # หน้าต่างที่โฟกัสสั้นกว่านี้ไม่บันทึก

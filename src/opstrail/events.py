@@ -14,8 +14,9 @@ from typing import Any
 from opstrail.config import Config
 
 SCHEMA_VERSION = 1
-EVENT_TYPES = {"shell", "window", "note", "screenshot", "task", "ai", "idle", "system"}
+EVENT_TYPES = {"shell", "window", "browser", "note", "screenshot", "task", "ai", "idle", "system"}
 REQUIRED_DATA = {
+    "browser": "url",
     "shell": "cmd",
     "window": "app",
     "note": "text",
@@ -157,6 +158,8 @@ def event_hash(row: dict[str, Any]) -> str:
 
 def event_text(type_: str, data: dict[str, Any]) -> str:
     """One-line human summary used for search and compact timelines."""
+    if type_ == "browser":
+        return f"{data.get('title', '')} — {data.get('url', '')}"
     if type_ == "shell":
         return str(data.get("cmd", ""))
     if type_ == "window":

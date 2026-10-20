@@ -217,3 +217,29 @@ opstrail purge --date|--before | install-claude [--remove]
 | รูปภาษาไทยใน .docx ผิดฟอนต์ | ตั้ง `[export] docx_font` หรือใส่ `reference.docx` ของบริษัท |
 
 สถาปัตยกรรมและ contract ทั้งหมด: [`SPEC.md`](SPEC.md)
+
+## ติดตั้ง extension
+
+OpsTrail Browser Capture สำหรับ Edge/Chrome ช่วยเก็บ URL จริงของหน้า admin console เช่น Azure blade,
+Sentinel rule หรือ vCenter แทนการอาศัยชื่อหน้าต่างอย่างเดียว
+
+1. เปิด OpsTrail agent หรือ `opstrail web` แล้วเข้า `http://127.0.0.1:8765/#/settings`
+2. ที่ **Browser extension** กด **แสดง token** → **คัดลอก token**
+3. เปิด `edge://extensions` หรือ `chrome://extensions` แล้วเปิด **Developer mode**
+4. กด **Load unpacked** แล้วเลือกโฟลเดอร์ `extension` ใน repo นี้
+5. เปิด **Extension options** ของ OpsTrail Browser Capture วาง token และพอร์ต OpsTrail
+   (ค่าเริ่มต้น `8765`) แล้วกด **บันทึก** จากนั้นสลับแท็บเพื่อเริ่มบันทึก
+
+ส่ง URL/title เฉพาะแท็บที่ใช้งานในหน้าต่าง browser ที่โฟกัสไปยังเครื่องนี้เท่านั้น สูงสุดหนึ่งครั้งต่อ
+3 วินาที ไม่บันทึก Incognito/InPrivate หาก web server ปิดอยู่จะข้ามข้อมูลโดยไม่ส่งย้อนหลัง
+ดู URL ที่บันทึกได้ใน timeline และ source pack ของเอกสาร
+
+Pause ของ OpsTrail หยุดการเก็บข้อมูล browser ด้วย ค่าเริ่มต้นตัด query string รวมถึง query ใน fragment
+แต่เก็บเส้นทาง `#blade/...` ไว้ และผ่าน redaction ก่อนบันทึก ตั้งค่า `[capture] browser_keep_query = true`
+ใน `config.toml` เฉพาะเมื่อต้องใช้ query จริง เพิ่มโดเมนส่วนตัวใน `[capture] exclude_domains` ได้
+(รวม subdomain อัตโนมัติ; รายการเริ่มต้นมีธนาคารหลักในไทยและ personal mail บางบริการ)
+และใช้ `exclude_title_patterns` ได้ตามเดิม จากนั้น restart agent/web server
+
+Token เก็บใน `<OPSTRAIL_HOME>/browser_token` (ปกติ `~/.opstrail/browser_token`) และใน extension storage
+ของเครื่องนี้ ห้ามแชร์ token หากต้องการเปลี่ยนให้ลบไฟล์นี้แล้วแสดง token ใหม่ใน Settings และจับคู่ใหม่
+หากต้องการปิด extension ให้กด **ลบ token / ปิดการบันทึก** ใน Options หรือปิด extension

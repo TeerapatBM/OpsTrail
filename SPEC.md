@@ -92,6 +92,8 @@ changes refresh both icon and menu. No new config keys, events, API routes or st
   logs/agent.log
   llm.json                   web UI AI settings; API key DPAPI-encrypted on Windows
   recap.json                 Teams webhook secret (DPAPI on Windows, base64/0600 elsewhere)
+  browser_token              random per-install browser ingest token (Settings → extension Options)
+  browser_token.lock         cross-process pairing-token creation lock
   refresh.lock               cross-process lock for ingest + grouping
   paused                     flag file – when present nothing is captured
 ~/Documents/OpsTrail/        exports (config: general.export_dir)
@@ -129,6 +131,7 @@ Every producer writes one JSON object per line to `~/.opstrail/inbox/<name>.json
 |---|---|
 | `shell` | `cmd`*, `cwd`, `success`, `exit_code`, `shell`, `session`, `output`, `output_truncated` (see 4a) |
 | `window` | `app`*, `title`, `pid`, `presence` (written by the agent with `duration_s`; `presence: true` = a meeting window open in the background while the user works elsewhere, not focus time) |
+| `browser` | `url`*, `title`, `domain` (HTTP/HTTPS active tab, point-in-time; source `browser-extension`) |
 | `note` | `text`*, `episode_id` |
 | `screenshot` | `path`*, `app`, `title`, `caption` |
 | `task` | `action`* (`start`/`stop`), `title` |
@@ -167,6 +170,47 @@ Every stored event gets `activity` + `subject` columns (`opstrail.activity`), fr
 Activities: `meeting, chat, email, terminal, remote, console, research, docs, code, ai, files, other`
 (notes/tasks keep their own type). `subject` = meeting subject, chat partner, console product, remote host…
 Old rows are back-filled on refresh.
+
+Browser events use these same ordered rules; default rule types now include `browser` and `@browser`
+matches browser events without a process name. Optional `url_regex` matches `data.url`; when both it and
+`title_regex` are supplied, both must match. A named `subject` group in the URL takes precedence over the
+title group. Invalid `url_regex` rules are skipped. Built-in URL rules identify Azure portal and Sentinel
+before ambiguous title rules. Browser URL/title appear in timeline/search and chronological source packs.
+They have no measured focus duration; the existing episode-span fallback still applies without focus windows.
+
+## 4c. Browser extension capture (opt-in)
+
+Load `extension/` unpacked in Edge/Chrome 103+ (Manifest V3). Settings → Browser extension → show/copy token
+calls `POST /api/browser/token` (requires `X-OpsTrail: 1` and the usual same-origin policy, no extension
+origin). Response `{token}` has `Cache-Control: no-store`; token is never in status or GET APIs.
+Creation is locked, random 32 bytes URL-safe encoded (43 chars), stored in `browser_token` (0600 on POSIX;
+inherited user-directory permissions on Windows). Delete that file to re-pair all extensions.
+
+`POST /api/ingest/browser` accepts `{url, title, tab_id, ts, incognito?: false}`. Requires both
+`X-OpsTrail: 1` and `X-OpsTrail-Browser-Token: <token>` even for local callers. LocalOnly still validates
+Host first. Only this POST accepts `chrome-extension://<32 a-p characters>` Origin with a matching token;
+other origins/routes remain blocked. No wildcard CORS or preflight allowance. The privileged extension
+worker uses loopback host permissions ([Chrome network request model](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests));
+web pages/content scripts cannot use this route cross-origin. CSP and other LocalOnly headers remain.
+Returns `{stored: bool, event_id: int|null}` (false for paused/excluded/deduplicated); invalid payload = 400,
+missing/wrong token/header/host/origin = 403. `tab_id` is validated but not stored; `ts` uses schema §4.
+
+Before `OpsTrail.record` → `store_event` → `redact_obj`, the service validates HTTP/HTTPS URL and removes
+userinfo; derives lowercase hostname (without port); applies `exclude_title_patterns`, `exclude_domains`
+(case-insensitive exact domain + all subdomains, optional `*.` prefix), and the paused flag.
+`[capture] browser_keep_query = false` strips the main query and `?…` inside SPA fragments while retaining
+fragment routes (Azure blades). Set true to retain query parameters, still subject to the redactor.
+Default excluded domains: mail.google.com, outlook.live.com, mail.yahoo.com, proton.me, kasikornbank.com,
+kbank.co.th, scb.co.th, krungthai.com, bangkokbank.com, krungsri.com. This is a starter list; users must add
+their personal services. Change config.toml then restart the agent/web server.
+
+Worker sends active tabs only in the focused browser window on activation, URL/title change, focus change
+or extension options change. Debounces bursts and sends at most once per 3 seconds globally; last attempt
+time alone lives in `storage.session` across worker restarts. No incognito support (`not_allowed` plus runtime
+checks), content scripts, browsing history, telemetry or durable URL queue. Token/port use `storage.local`
+(not sync); only network destination is `http://127.0.0.1:<port>/api/ingest/browser`. No redirects, 5s timeout;
+offline/errors drop the event silently. Unsupported/missing tabs and unavailable web service degrade to
+normal window-title capture. No extension-store publishing or additional Python dependencies.
 
 ## 5. Episodes (work items)
 

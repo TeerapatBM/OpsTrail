@@ -3,12 +3,26 @@
 #
 # Fields (all optional except activity):
 #   activity      meeting | chat | email | terminal | remote | console | research | docs | code | ai | files | other
-#   types         event types the rule applies to (default: ["window", "screenshot"])
+#   types         event types the rule applies to (default: ["window", "screenshot", "browser"])
 #   apps          process names (case-insensitive), e.g. ["ms-teams.exe"]; "@browser" = any web browser
 #   title_regex   regex the window title must match (named group (?P<subject>...) becomes the subject)
 #   title_exclude regex that must NOT match
 #   cmd_regex     regex for shell/ai commands
+#   url_regex     regex for browser URLs; ANDed with title_regex when both are present
 #   subject       fixed subject when the regex has no (?P<subject>) group (e.g. a product name)
+
+# URL rules precede ambiguous portal titles. Title and URL conditions are ANDed.
+[[rule]]
+activity = "console"
+types = ["browser"]
+url_regex = '(?i)^https://(?:portal\.azure\.com/.*Microsoft_Azure_Security_Insights|security\.microsoft\.com/sentinel(?:[/?#]|$))'
+subject = "Microsoft Sentinel"
+
+[[rule]]
+activity = "console"
+types = ["browser"]
+url_regex = '(?i)^https://portal\.azure\.com/'
+subject = "Azure portal"
 
 # ---------------------------------------------------------------- meetings
 [[rule]]

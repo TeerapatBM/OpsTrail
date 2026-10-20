@@ -175,6 +175,12 @@ def episode_pack(ep: dict[str, Any], events: list[dict[str, Any]], tz: tzinfo) -
         out.extend(cmds)
         out.append("```")
 
+    pages = [e for e in events if e["type"] == "browser"]
+    if pages:
+        out.append("\n**Browser pages (chronological, secrets already redacted)**")
+        for ev in pages:
+            out.append(f"- {hhmm(ev['epoch'], tz)} {ev.get('text')}")
+
     windows = window_summary(events)
     if windows:
         out.append("\n**Windows / pages used (by focus time)**")

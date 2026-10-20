@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="th">
+<head><meta charset="utf-8"><title>ตั้งค่า OpsTrail Browser Capture</title></head>
+<body>
+  <h1>ตั้งค่า OpsTrail Browser Capture</h1>
+  <p>เปิด OpsTrail → ตั้งค่า → Browser extension แล้วคัดลอก token มาวางที่นี่</p>
+  <form id="options">
+    <p><label>Browser token <input id="token" type="password" autocomplete="off" required></label></p>
+    <p><label>พอร์ต OpsTrail <input id="port" type="number" min="1" max="65535" value="8765" required></label></p>
+    <button type="submit">บันทึก</button>
+    <button id="disable" type="button">ลบ token / ปิดการบันทึก</button>
+  </form>
+  <p id="status" role="status"></p>
+  <p>ส่งเฉพาะ URL และ title ของแท็บที่ใช้งานไปยัง 127.0.0.1 เท่านั้น ไม่บันทึก Incognito / InPrivate
+    หาก OpsTrail ปิดอยู่จะข้ามข้อมูลนั้น ไม่มีการส่งย้อนหลัง</p>
+  <script src="options.js"></script>
+</body>
+</html>
