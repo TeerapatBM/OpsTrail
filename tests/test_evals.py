@@ -33,3 +33,23 @@ def test_golden_day_with_llm(cfg, fake_llm):
     FakeLLM.reply += "\nbackup ไปที่ 192.168.77.7\n"
     res2 = evals.run_case(case, use_llm=True, llm_from=cfg)
     assert any(n == "fact-check" and not ok and "192.168.77.7" in d for n, ok, d in res2.checks)
+
+
+def test_optional_reviewer_eval_column(cfg, fake_llm):
+    llm.save_settings(cfg, {"provider": "openai", "base_url": fake_llm, "model": "writer"})
+    case = next(c for c in evals.load_cases() if c["name"] == "soc-day")
+    without = evals.run_case(case, use_llm=True, llm_from=cfg)
+    assert without.reviewer_score is None
+    assert "Reviewer score" not in evals.report([without], True)
+    llm.save_settings(cfg, {"provider": "openai", "base_url": fake_llm, "model": "reviewer-test"}, profile="reviewer")
+    FakeLLM.review_reply = '{"issues":[{"severity":"error","quote":"x","problem":"ตรวจหลักฐาน","suggestion":"TODO"}]}'
+    with_review = evals.run_case(case, use_llm=True, llm_from=cfg)
+    assert with_review.reviewer_score == 80
+    assert with_review.checks == without.checks
+    assert "Reviewer score /100" in evals.report([with_review], True)
+    assert "Reviewer score" not in evals.report([with_review], False)
+    FakeLLM.review_reply = 'invalid'
+    failed_review = evals.run_case(case, use_llm=True, llm_from=cfg)
+    assert failed_review.reviewer_error and failed_review.reviewer_score is None
+    assert failed_review.checks == without.checks
+    assert "unavailable" in evals.report([failed_review], True)

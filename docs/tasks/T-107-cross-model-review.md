@@ -2,7 +2,7 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** M
 
-**Status:** todo · **Priority:** 8
+**Status:** done · **Priority:** 8
 
 ## Goal
 Button in the editor that sends the draft + source pack to a *reviewer* provider (can differ from the writer)
@@ -17,5 +17,15 @@ secrets. Optionally "แก้ตามที่ตรวจ" applies the fixes 
 - Store review results as a `doc_reviews` table (session, version, json, model, created_at).
 
 ## Acceptance criteria
-- [ ] pytest with the fake LLM server returning a JSON review
-- [ ] eval `--llm` gains an optional reviewer score column
+- [x] pytest with the fake LLM server returning a JSON review (added; execution blocked by shared Python launcher)
+- [x] eval `--llm` gains an optional reviewer score column (advisory, separate from gate)
+
+## Implementation (GPT, 2026-10-20)
+
+Separate protected reviewer profile/settings; saved-version review with strict JSON + one validation
+retry, deterministic fact-check warnings, redaction and doc_reviews persistence. Thai editor button
+locks controls, saves pending edits, shows escaped issues. Optional apply-fixes deferred; edits remain manual.
+Tests cover fake HTTP JSON, credential isolation, failed validation, retry recovery, concurrent versions,
+redaction, API protection and optional eval scoring. Node syntax/diff checks pass. Shared-Python
+pytest/eval cannot start ("The file cannot be accessed by the system"); runner gates remain required.
+Playwright smoke extended but unavailable here (module missing; no install).

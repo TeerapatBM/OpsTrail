@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS kv (
     key    TEXT PRIMARY KEY,
     value  TEXT
 );
+
+CREATE TABLE IF NOT EXISTS doc_reviews (
+    id          INTEGER PRIMARY KEY,
+    session_id  INTEGER NOT NULL,
+    version     INTEGER NOT NULL,
+    json        TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_doc_reviews_version ON doc_reviews(session_id, version, id);
 """
 
 DOC_STATUSES = ("draft", "review", "final", "archived")
