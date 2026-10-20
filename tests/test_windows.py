@@ -175,3 +175,71 @@ prompt | Out-Null
         svc.store.close()
     # the transcript holds raw (unredacted) output: removed when the shell exits
     assert list((cfg.home / "transcripts").glob("*.txt")) == []
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_hook_does_not_transcribe_while_paused(home):
+    """T-106 review: a shell started paused never transcribes; pausing later stops and deletes the transcript."""
+    from opstrail.config import load_config
+    from opstrail.service import OpsTrail
+
+    with (home / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n[capture]\nshell_output = true\n")
+    cfg = load_config(home)
+    paused = cfg.home / "paused"
+    paused.write_text("", encoding="utf-8")
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$flag = '{paused}'
+$tdir = '{cfg.home / "transcripts"}'
+function Assert-NoTranscript($where) {{
+    if ($global:OpsTrailTranscript) {{ throw "transcript running $where" }}
+    if (@(Get-ChildItem -LiteralPath $tdir -Filter *.txt -ErrorAction SilentlyContinue).Count) {{ throw "transcript file $where" }}
+}}
+function Run($cmd, $sec) {{
+    Add-History -InputObject ([pscustomobject]@{{CommandLine=$cmd; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds($sec); EndExecutionTime=$t.AddSeconds($sec)}})
+    prompt | Out-Null
+}}
+. '{hook}'
+$t = Get-Date
+Assert-NoTranscript 'at start-up while paused'
+'STARTUP-PAUSED-SECRET'
+Run 'cmd-a-paused' 1
+Assert-NoTranscript 'after a paused command'
+Remove-Item -LiteralPath $flag
+Run 'cmd-b-resume' 2
+if (-not $global:OpsTrailTranscript) {{ throw 'transcript not started after resume' }}
+'visible output c'
+Run 'cmd-c' 3
+New-Item -ItemType File -Path $flag | Out-Null
+'PAUSED-LATER-SECRET'
+Run 'cmd-d-paused' 4
+Assert-NoTranscript 'after pausing'
+'MORE-PAUSED-SECRET'
+Run 'cmd-e-paused' 5
+Assert-NoTranscript 'while paused'
+Remove-Item -LiteralPath $flag
+Run 'cmd-f-resume' 6
+'visible output g'
+Run 'cmd-g' 7
+"""
+    env = {**os.environ, "OPSTRAIL_HOME": str(cfg.home)}
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    svc = OpsTrail(cfg)
+    try:
+        svc.refresh()
+        shells = [e for e in svc.store.events_for_date(cfg.today()) if e["type"] == "shell"]
+        by_cmd = {e["data"]["cmd"]: e["data"] for e in shells}
+        assert list(by_cmd) == ["cmd-b-resume", "cmd-c", "cmd-f-resume", "cmd-g"]
+        assert by_cmd["cmd-c"]["output"] == "visible output c"
+        assert by_cmd["cmd-g"]["output"] == "visible output g"
+        assert "output" not in by_cmd["cmd-b-resume"] and "output" not in by_cmd["cmd-f-resume"]
+        assert "SECRET" not in repr(shells)
+    finally:
+        svc.store.close()
+    assert list((cfg.home / "transcripts").glob("*.txt")) == []

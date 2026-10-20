@@ -7,7 +7,8 @@ from typing import Any, Iterable
 
 MASK = "[REDACTED]"
 
-_QUOTED_OR_WORD = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|]+)"
+# A quote that is never closed (e.g. a line cut by output truncation) is masked to the end of the line.
+_QUOTED_OR_WORD = r"(?:\"[^\"]*\"|'[^']*'|\"[^\"\n]*|'[^'\n]*|[^\s\"';&|]+)"
 
 # (pattern, replacement). Replacements keep the "label" part so the document
 # still says *that* a secret was used, without the value.
@@ -29,7 +30,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"), MASK),
     (re.compile(r"\bLTAI[0-9A-Za-z]{12,24}\b"), MASK),  # Alibaba Cloud AccessKey ID
     # Azure connection strings / SAS
-    (re.compile(r"(?i)((?:AccountKey|SharedAccessKey|SharedSecretValue)\s*=\s*)[^;\s\"']+"), r"\1" + MASK),
+    (re.compile(r"(?i)((?:AccountKey|SharedAccessKey|SharedSecretValue)\s*=\s*[\"']?)[^;\s\"']+"), r"\1" + MASK),
     (re.compile(r"(?i)([?&]sig=)[^&\s\"']+"), r"\1" + MASK),
     # Credentials inside URLs: scheme://user:pass@host
     (re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]*://[^:/\s@]+:)[^@\s/]+(@)"), r"\1" + MASK + r"\2"),

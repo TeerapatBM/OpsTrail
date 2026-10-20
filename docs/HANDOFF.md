@@ -87,6 +87,9 @@ Older backlog items (kept for reference):
   opted in, cuts lines; source pack shows `│` output under each command; eval case `sop-output-day` (+ `[case.pack]`).
   Files: `hooks/powershell/OpsTrail.ps1`, `config.py`, `events.py`, `redact.py`, `render.py`, `evals.py`, `evals/`,
   `tests/test_shell_output.py`, `tests/test_windows.py`, SPEC §3/§4/§4a/§6b/§8, README, card.
+  Round 2 (GPT review): unterminated quoted secrets (cut at 400 chars) are redacted; pause stops + deletes the
+  transcript and a shell started paused never transcribes (`Start-/Stop-OpsTrailTranscript`). Tests:
+  `test_quoted_secret_cut_by_line_truncation_is_redacted`, `test_powershell_51_hook_does_not_transcribe_while_paused`.
 - T-104 web diff + streaming — GPT, 2026-10-20. Added difflib saved-version API + Thai word comparison;
   Anthropic/OpenAI/Azure SSE into the editor, save-on-success + fact-check, safe failure recovery.
   Files: `service.py`, `llm.py`, `web/app.py`, `web/static/app.js`, `app.css`, `tests/test_web.py`, `tests/web_editor_smoke.cjs`, SPEC/README/card/plan.
@@ -124,11 +127,19 @@ Older backlog items (kept for reference):
 - 2026-10-20 — T-106 (Claude): the transcript is read from a byte offset that advances on *every* prompt (also empty
   Enter / paused), ≤ 64 KB per command; the leading `PS …> <cmd>` echo is dropped by matching the command's first
   line in the first 5 lines. Transcripts hold raw output, so they are deleted on `exit` (`PowerShell.Exiting`) and
-  files > 12 h old are removed at the next shell start (a live shell keeps its file locked). The transcript keeps
-  running while paused (stopping it could stop a user's own nested transcript); nothing is ingested while paused.
+  files > 12 h old are removed at the next shell start (a live shell keeps its file locked).
+  Round 2 (GPT review, supersedes "transcript keeps running while paused"): privacy wins over the nested-transcript
+  edge case — a shell started paused never starts the transcript; once the flag exists the next prompt stops it,
+  deletes the file and discards that prompt's output; the first prompt after resume starts a new file
+  (`-<n>` suffix: a just-deleted path can still be pending delete, and PS 5.1 may create the file lazily, so the
+  read offset `-1` means "skip the `*****` header first"). Known limit: if the user started their own transcript
+  after ours, `Stop-Transcript` on pause stops theirs (PowerShell has no API to stop a specific transcript).
 - 2026-10-20 — T-106 (Claude): redaction now runs on output that may be cut mid-block, so the PEM pattern also masks a
   `BEGIN … PRIVATE KEY` with no END up to the end of the string; `key=value` now matches env-style prefixes
   (`SPLUNK_PASSWORD=`, `DB_API_KEY:`) because printed .env/config files are the most likely secret in output.
+  Round 2 (GPT review): the hook cuts lines at 400 chars, which can drop a closing quote; `_QUOTED_OR_WORD` now also
+  matches an unterminated quote up to the end of the line (over-masks rather than leaks), and `AccountKey=` etc.
+  accept an opening quote. Fixed in the redactor (not the hook) so every producer benefits.
 - 2026-10-20 — T-106 (Claude): source pack shows ≤ 15 output lines per command (card), `    │ ` prefix inside the
   existing ```text block; the daily worklog and AI-title prompts stay command-only. Output is not added to event
   `text` (search/timeline) to keep the timeline compact. Eval gets a deterministic `[case.pack] must_contain` check so

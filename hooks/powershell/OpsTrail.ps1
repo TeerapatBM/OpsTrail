@@ -5,7 +5,8 @@
 # Writes one JSON line per command to %USERPROFILE%\.opstrail\inbox (schema: SPEC.md section 4).
 # Secrets are redacted when the agent ingests the inbox. Create ~/.opstrail/paused to stop recording.
 # Opt-in: [capture] shell_output = true in config.toml also records the first lines of each command's output
-# (Start-Transcript into ~/.opstrail/transcripts, read back in prompt; read when the shell starts).
+# (Start-Transcript into ~/.opstrail/transcripts, read back in prompt; config is read when the shell starts).
+# Pausing stops and deletes the transcript at the next prompt; a shell started while paused does not transcribe.
 
 if ($global:OpsTrailHookLoaded) { return }
 $global:OpsTrailHookLoaded = $true
@@ -40,28 +41,54 @@ $global:OpsTrailOutputLines = & {
     } catch { $enabled = $false }
     if ($enabled) { [math]::Min([math]::Max($lines, 0), 200) } else { 0 }
 }
-$global:OpsTrailTranscript = $null
-$global:OpsTrailTranscriptPos = 0
+$global:OpsTrailTranscript = $null      # path while our transcript is running
+$global:OpsTrailTranscriptPos = 0       # bytes already consumed; -1 = skip the transcript header first
+$global:OpsTrailTranscriptCount = 0
+$global:OpsTrailTranscriptFailed = $false
+$global:OpsTrailPausedFlag = Join-Path $global:OpsTrailHome 'paused'
+
+function global:Start-OpsTrailTranscript {
+    if ($global:OpsTrailTranscript -or $global:OpsTrailTranscriptFailed -or $global:OpsTrailOutputLines -le 0) { return }
+    $started = $false
+    try {
+        $dir = Join-Path $global:OpsTrailHome 'transcripts'
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        # a new file per start: a just-deleted transcript path can still be pending delete
+        $global:OpsTrailTranscriptCount++
+        $file = Join-Path $dir ("pwsh-{0}-{1}-{2}.txt" -f $PID, $global:OpsTrailSession, $global:OpsTrailTranscriptCount)
+        Start-Transcript -LiteralPath $file -ErrorAction Stop | Out-Null
+        $started = $true
+        # PowerShell may create the file (and write its header) lazily
+        $info = Get-Item -LiteralPath $file -ErrorAction SilentlyContinue
+        $global:OpsTrailTranscriptPos = if ($info -and $info.Length -gt 0) { $info.Length } else { -1 }
+        $global:OpsTrailTranscript = $file
+    } catch {
+        $global:OpsTrailTranscriptFailed = $true  # e.g. a host without transcription: record commands only
+        if ($started) {
+            try { Stop-Transcript | Out-Null } catch { }
+            Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function global:Stop-OpsTrailTranscript {
+    # Stop our transcript and delete it: it holds raw (unredacted) output.
+    if (-not $global:OpsTrailTranscript) { return }
+    try { Stop-Transcript | Out-Null } catch { }
+    Remove-Item -LiteralPath $global:OpsTrailTranscript -Force -ErrorAction SilentlyContinue
+    $global:OpsTrailTranscript = $null
+}
+
 if ($global:OpsTrailOutputLines -gt 0) {
     try {
-        $__dir = Join-Path $global:OpsTrailHome 'transcripts'
-        if (-not (Test-Path -LiteralPath $__dir)) { New-Item -ItemType Directory -Path $__dir -Force | Out-Null }
         # transcripts of shells that were closed without cleanup (a live shell keeps its file locked)
-        Get-ChildItem -LiteralPath $__dir -Filter '*.txt' -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath (Join-Path $global:OpsTrailHome 'transcripts') -Filter '*.txt' -ErrorAction SilentlyContinue |
             Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-12) } |
             Remove-Item -Force -ErrorAction SilentlyContinue
-        $__file = Join-Path $__dir ("pwsh-{0}-{1}.txt" -f $PID, $global:OpsTrailSession)
-        Start-Transcript -LiteralPath $__file -ErrorAction Stop | Out-Null
-        $global:OpsTrailTranscript = $__file
-        $global:OpsTrailTranscriptPos = (Get-Item -LiteralPath $__file).Length
-        $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
-            try { Stop-Transcript | Out-Null } catch { }
-            Remove-Item -LiteralPath $global:OpsTrailTranscript -Force -ErrorAction SilentlyContinue
-        }
-    } catch {
-        $global:OpsTrailTranscript = $null  # e.g. a host without transcription: record commands only
-    }
-    Remove-Variable __dir, __file -ErrorAction SilentlyContinue
+    } catch { }
+    # paused: nothing is transcribed until the flag is removed (prompt starts it then)
+    if (-not (Test-Path -LiteralPath $global:OpsTrailPausedFlag)) { Start-OpsTrailTranscript }
+    $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Stop-OpsTrailTranscript }
 }
 
 function global:Read-OpsTrailTranscript {
@@ -72,8 +99,9 @@ function global:Read-OpsTrailTranscript {
             [System.IO.FileAccess]::Read, [System.IO.FileShare]'ReadWrite, Delete')
         try {
             $len = $fs.Length
-            $start = [math]::Min($global:OpsTrailTranscriptPos, $len)
-            $global:OpsTrailTranscriptPos = $len
+            $skipHeader = $global:OpsTrailTranscriptPos -lt 0
+            $start = [math]::Min([math]::Max($global:OpsTrailTranscriptPos, 0), $len)
+            if ($len -gt 0) { $global:OpsTrailTranscriptPos = $len }  # an empty file keeps the header skip
             $n = [int][math]::Min($len - $start, 65536)
             if ($n -le 0) { return $null }
             $buf = New-Object byte[] $n
@@ -85,6 +113,12 @@ function global:Read-OpsTrailTranscript {
                 $read += $r
             }
             $text = [System.Text.Encoding]::UTF8.GetString($buf, 0, $read)
+            if ($skipHeader) {
+                # header = text between the first two "*****" lines; without both, drop everything
+                $m = [regex]::Match($text, '^\*{10,}[ \t]*\r?\n[\s\S]*?^\*{10,}[ \t]*(\r?\n|$)', 'Multiline')
+                if (-not $m.Success) { return $null }
+                $text = $text.Substring($m.Index + $m.Length)
+            }
             if (($len - $start) -gt $n) { $text += "`n<opstrail:more>" }
             return $text
         } finally { $fs.Dispose() }
@@ -128,7 +162,7 @@ function global:Invoke-OpsTrailRecord {
         $h = Get-History -Count 1
         if (-not $h -or $h.Id -eq $global:OpsTrailLastId) { return }
         $global:OpsTrailLastId = $h.Id
-        if (Test-Path -LiteralPath (Join-Path $global:OpsTrailHome 'paused')) { return }
+        if (Test-Path -LiteralPath $global:OpsTrailPausedFlag) { return }
         if (-not (Test-Path -LiteralPath $global:OpsTrailInbox)) {
             New-Item -ItemType Directory -Path $global:OpsTrailInbox -Force | Out-Null
         }
@@ -173,6 +207,13 @@ function global:prompt {
     $ok = $?
     $code = $global:LASTEXITCODE
     $out = Read-OpsTrailTranscript  # always consume, so the next command only gets its own output
+    if ($global:OpsTrailOutputLines -gt 0) {
+        # pause also stops (and deletes) the transcript; it restarts at the first prompt after resume
+        try {
+            if (Test-Path -LiteralPath $global:OpsTrailPausedFlag) { Stop-OpsTrailTranscript; $out = $null }
+            else { Start-OpsTrailTranscript }
+        } catch { }
+    }
     Invoke-OpsTrailRecord -Ok $ok -ExitCode $code -Output $out
     $global:LASTEXITCODE = $code
     if ($global:OpsTrailOriginalPrompt) { & $global:OpsTrailOriginalPrompt }

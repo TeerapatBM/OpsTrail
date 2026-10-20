@@ -84,6 +84,18 @@ def test_redaction_of_env_style_keys_and_cut_pem():
     assert redact_text(full) == "[REDACTED]\nafter"
 
 
+def test_quoted_secret_cut_by_line_truncation_is_redacted():
+    # the PowerShell hook cuts output lines at 400 chars + "...": the closing quote is lost
+    secret = "S" * 500
+    for line in (f'password="{secret}"', f"api_key: '{secret}'", f"--token \"{secret}\"",
+                 f'AccountKey="{secret}"'):
+        cut = line[:400] + "..."
+        out = redact_text(cut + "\nnext line")
+        assert "SSSS" not in out and "[REDACTED]" in out, out
+        assert out.endswith("\nnext line")  # masked to the end of the cut line only
+    assert redact_text('password="abc" user=bob') == "password=[REDACTED] user=bob"
+
+
 def test_source_pack_shows_output_under_each_command(home):
     cfg = enable_output(home, lines=40)
     svc = OpsTrail(cfg)
