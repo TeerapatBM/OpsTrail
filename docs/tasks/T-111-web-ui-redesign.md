@@ -2,7 +2,7 @@
 
 **Suggested owner:** GPT (Codex) · **Phase:** B · **Size:** L
 
-**Status:** needs-bro · **Priority:** 1
+**Status:** done · **Priority:** 1
 
 > Bro: "อยากยกเครื่องธีมของ web UI ใหม่หมด ให้ GPT เป็นคนออกแบบทั้งหมด"
 > GPT owns every design decision (concept, colours, typography, layout, components, icons, motion).
