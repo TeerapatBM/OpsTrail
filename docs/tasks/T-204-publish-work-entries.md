@@ -12,9 +12,11 @@ is ever uploaded. Design: `docs/team-mode.md` §6.1, §6.3, §7.
 - `src/opstrail/team/projection.py`: deterministic `project_episode()` → only the fields of design §6.1;
   `redact_obj` incl. extra patterns; warnings (auto title not confirmed, `[REDACTED]` present). The previewed
   payload and its SHA-256 are what is queued — no recomputation at send time.
-- Minutes follow design §6.1 "Minutes": `active_min` = Σ `stats.active_s` (presence never added), `meeting_min`
-  ⊆ `active_min`, `activities` from focus windows only, `segments` per source episode; an episode already in a
-  work entry cannot be submitted in another one.
+- Minutes follow design §6.1 "Minutes": `active_min` = union of the focused-window intervals of the source
+  episodes, computed in the projection — **never** `stats.active_s` (its event-span fallback would count
+  uncaptured time); presence never added; no focus windows → `active_min = 0` + preview warning pointing to
+  `claimed_min`; `meeting_min` ⊆ `active_min`, `activities` from focus windows only, `segments` per source
+  episode; an episode already in a work entry cannot be submitted in another one.
 - Additive local tables `team_outbox`, `team_items`; sync worker thread in the agent (every `sync_interval_min`
   and after a submit, backoff 1/5/15/60 min, never blocks capture); `GET /v1/me/items?since=` updates local states.
 - Hub: `PUT /v1/items/{uuid}` (kind `work`): strict schema, field limits, owner fixed, idempotent on
@@ -30,4 +32,7 @@ is ever uploaded. Design: `docs/team-mode.md` §6.1, §6.3, §7.
 - [ ] minutes fixture (agent fake-OS run like `tests/test_agent.py`): focused meeting, screen-shared meeting with
       foreground PowerShell, work after the call → `active_min` = wall-clock focus time, `meeting_min ≤ active_min`,
       Σ `activities` ≤ `active_min`; Hub rejects `meeting_min > active_min` (400) and overlapping `segments` (409)
+- [ ] shell-only fixture: two shell commands 20 min apart, no window events (local `stats.active_s` ≈ 20 min via
+      the span fallback) → `active_min = 0`, `meeting_min = 0`, preview warning shown; with `claimed_min = 20`
+      the payload carries 20 as *claimed*, `active_min` stays 0
 - [ ] SPEC / README (Thai) updated

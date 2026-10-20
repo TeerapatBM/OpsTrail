@@ -197,6 +197,11 @@ Older backlog items (kept for reference):
   Customer moved from `items` to each revision; approved content is readable only if the user may see the customer
   of `approved_rev` **and** of a pending newer revision (fail closed in both retag directions) — chosen over making
   the customer immutable, because a wrong tag must stay correctable without withdrawing approved work.
+- 2026-10-20 — T-110 round 3 (Claude, from GPT review): published `active_min` = union of **focused-window**
+  intervals, computed by the projection — not `stats.active_s`, whose event-span fallback (no focus windows) would
+  turn two shell commands 20 min apart into 20 captured minutes. Shell-only / notes-only / presence-only episodes
+  publish `active_min = 0` with a preview warning; uncaptured work is reported only as `claimed_min`. Local
+  `stats.active_s` and its fallback stay unchanged (titles/recaps). Shell-only fixtures added to T-204/T-208.
 - 2026-10-20 — T-110 (Claude): new cards are `**Status:** blocked` (duo treats a missing status as `todo` and would
   start building before approval); `tests/test_task_cards.py` keeps every card parseable by `duo.ps1`.
 

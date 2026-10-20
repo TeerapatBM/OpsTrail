@@ -160,7 +160,7 @@ Self-approval is blocked even for leads/admins (four-eyes); a one-person team ca
 | `uuid` | client, random v4 on first submit | idempotency key; maps to the local episode in `team_items` |
 | `date`, `start`, `end` | episode | local date (Asia/Bangkok), ISO times |
 | `segments` | source episodes | `[[start, end], …]`, one per merged episode; the Hub rejects (409) a segment that overlaps another live work entry of the same owner |
-| `active_min` | Σ episode `stats.active_s` | **the** captured time — see "Minutes" below |
+| `active_min` | focused-window intervals of the source episodes | **the** captured time — see "Minutes" below; **not** `stats.active_s` |
 | `meeting_min` | breakdown of `active_min` | the part of `active_min` spent in meetings; never added to it (`meeting_min ≤ active_min`, Hub 400 otherwise) |
 | `claimed_min` | **user**, optional | what the user says they spent (offline work, calls); report shows captured vs claimed |
 | `customer` | user (pre-filled) | registry code |
@@ -174,15 +174,25 @@ Not included: commands, cwd, window titles, URLs, subjects, notes, output, scree
 
 **Minutes — one wall-clock minute is counted once.** The projection never adds overlapping sources:
 
-- `active_min` = Σ `round(stats.active_s / 60)` of the source episodes. `active_s` is focused-window time only;
-  background meeting presence (`data.presence`) is **not** added, because it overlaps the focus windows of the
-  same minutes (T-102: `episodes.py` counts presence once, `test_agent.py` asserts a 35-min screen-shared call has
-  `active_s = 35 min`). Episodes never overlap (T-102 reclaims foreground work during a call into the meeting
-  episode), and each local episode can belong to at most one work entry (`team_items` mapping; the client refuses
-  a second submit, the Hub's `segments` overlap check catches a modified client).
+- `active_min` = `round(focus_s / 60)`, where `focus_s` is computed by the projection itself: the **union** of the
+  focused-window intervals (`type = window` events that pass `episodes.is_focus_window`, `[epoch, epoch +
+  duration_s]`) of all source episodes, each clipped to its episode's `[start, end]`. Round once, after summing.
+  The projection does **not** use the local `stats.active_s`: that value falls back to the span of the episode's
+  events when it has no focus windows (`episodes.py`, "without focus windows, fall back to the span …"), so two
+  shell commands 20 minutes apart would publish 20 captured minutes with zero recorded focus time. That fallback
+  stays for local titles/recaps; it never reaches the Hub.
+- Background meeting presence (`data.presence`) is **not** added, because it overlaps the focus windows of the same
+  minutes (T-102: a 35-min screen-shared call is 35 focused minutes of PowerShell, not 70). Episodes never overlap
+  (T-102 reclaims foreground work during a call into the meeting episode), and each local episode can belong to at
+  most one work entry (`team_items` mapping; the client refuses a second submit, the Hub's `segments` overlap
+  check catches a modified client).
+- **Episodes without focus time** — shell-only (no capture agent, e.g. Linux/macOS hooks or SSH from another box),
+  notes/screenshots only, or presence-only (T-102) — project to `active_min = 0`, `meeting_min = 0`. The preview
+  shows the warning "ไม่มีเวลาที่จับได้ (no focused-window time) — ใส่เวลาที่ใช้จริงใน claimed_min" and the
+  entry is still allowed; uncaptured work is reported only through `claimed_min`, visibly as *claimed*.
 - `meeting_min` ⊆ `active_min`: a meeting episode (`origin = meeting`, focused **or** screen-shared) → its whole
   `active_min` (the call, incl. foreground work while sharing); any other episode → its focused minutes classified
-  `meeting`. A presence-only episode has `active_s = 0` (T-102) → 0/0; the user can enter `claimed_min`.
+  `meeting`.
 - `activities` is recomputed from focus windows only (the local `stats.activities` also counts presence segments
   and a 30 s weight per command, which overlap focus time — fine for titles, wrong for minutes).
 
@@ -302,8 +312,10 @@ Local additions (built on this API, cards T-203…T-208):
 - **Minutes of a work entry** = `claimed_min` if given, else `active_min` (§6.1 — `active_min` already contains
   the meeting time). `meeting_min` is only a breakdown ("meeting hours" in the report) and is **never added**.
 - A golden fixture covers a focused meeting (Teams in front), a screen-shared meeting (PowerShell in front, Teams
-  in the background → presence segments) and foreground work after the call: expected minutes = wall-clock focus
-  time, and the property "Σ minutes of one member's day ≤ union of their focus windows" is asserted.
+  in the background → presence segments), foreground work after the call and a **shell-only** episode (two
+  commands 20 min apart, no focus windows): expected minutes = wall-clock focus time (the shell-only episode adds
+  0 captured minutes and counts only through its `claimed_min`), and the property "Σ `active_min` of one member's
+  day ≤ union of their focus windows" is asserted.
 - **Man-days** = Σ minutes ÷ (`hours_per_manday` × 60), `hours_per_manday = 8` by default; shown with two
   decimals, plus captured vs claimed minutes so a lead sees adjustments. Rounding for invoices is a finance
   decision, not OpsTrail's. `INTERNAL` is reported separately.
@@ -441,7 +453,8 @@ Pilot after T-208: Bro + one lead, one customer, two weeks; then T-209 must be d
 3. **Where the Hub runs**: Sysware DC/VM reachable over VPN (recommended) vs. a cloud VM; region inside Thailand?
 4. **Entra**: who in IT creates the two app registrations and groups; Entra ID P1 available (group → role)?
 5. **Man-day**: 8 h? Do meetings count (proposed: yes — they are part of `active_min`, §6.1)? Is `claimed_min`
-   allowed, and should a lead see the captured value?
+   allowed, and should a lead see the captured value? Shell-only / no-agent work has 0 captured minutes (§6.1) —
+   is `claimed_min` the right way to report it (proposed: yes)?
 6. **Lead approval for work entries** — required (proposed) or only for documents?
 7. **Retention values** in §10.5 and **DPO/legal review** of §10 + Appendix A before the pilot.
 8. **Restricted customers** needed from day one (which customers' contracts forbid team-wide sharing)?

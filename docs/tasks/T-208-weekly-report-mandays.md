@@ -24,6 +24,8 @@ member sees their own. Design: `docs/team-mode.md` §9.
       week boundary at Sunday 23:30 Bangkok and unapproved entries excluded
 - [ ] no double counting: the fixture has a focused meeting and a screen-shared (background) meeting with
       foreground work; totals equal wall-clock focus time and `meeting_min` never adds to them
+- [ ] shell-only entry (`active_min = 0`, `claimed_min = 20`): counted as 20 *claimed* minutes, 0 captured; the
+      same entry without `claimed_min` adds 0 to the totals
 - [ ] a work entry whose pending revision moved it to a restricted customer is hidden from non-group leads' reports
 - [ ] CSV test; a member cannot read team scope (matrix test)
 - [ ] SPEC / README (Thai) updated
