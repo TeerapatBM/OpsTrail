@@ -30,6 +30,7 @@ name = "soc-day"
 day = "days/soc-day-01.jsonl"
 date = "2026-10-19"
 projects = { "Splunk" = ["splunk"] }      # [projects] สำหรับเคสนี้ (ไม่บังคับ)
+capture = { shell_output = true }          # [capture] สำหรับเคสนี้ (ไม่บังคับ) เช่น เปิดเก็บผลลัพธ์คำสั่ง
 
   [case.episodes]
   count_min = 4
@@ -37,6 +38,9 @@ projects = { "Splunk" = ["splunk"] }      # [projects] สำหรับเค�
   meetings = 1
   titles_contain = ["Splunk", "ประชุม: Weekly SOC sync"]
   meeting_time = "11:00–11:40"
+
+  [case.pack]                                # ไม่ใช้ AI: source pack ของงานใน [case.doc] ต้องมีข้อความเหล่านี้
+  must_contain = ["Running  splunkd"]
 
   [case.doc]                                 # ใช้เมื่อ --llm
   template = "sop"

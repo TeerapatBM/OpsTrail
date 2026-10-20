@@ -10,6 +10,8 @@ from opstrail.episodes import app_display
 from opstrail.events import is_focus_window
 
 MAX_COMMANDS_PER_EPISODE = 150
+MAX_OUTPUT_LINES = 15  # captured output lines shown under a command in the source pack
+MAX_OUTPUT_WIDTH = 300
 
 
 def hhmm(epoch: float, tz: tzinfo, seconds: bool = False) -> str:
@@ -47,9 +49,31 @@ def compact_event(ev: dict[str, Any], tz: tzinfo) -> dict[str, Any]:
     return out
 
 
-def command_lines(events: list[dict[str, Any]], tz: tzinfo, limit: int = MAX_COMMANDS_PER_EPISODE) -> list[str]:
-    """Chronological command list with consecutive duplicates collapsed."""
+def output_lines(data: dict[str, Any], max_lines: int = MAX_OUTPUT_LINES) -> list[str]:
+    """Captured command output (opt-in, `data.output`) as indented lines shown under the command."""
+    output = data.get("output")
+    if not isinstance(output, str) or not output.strip():
+        return []
+    lines = output.split("\n")
+    more = bool(data.get("output_truncated")) or len(lines) > max_lines
+    out = [f"    │ {line[:MAX_OUTPUT_WIDTH]}".rstrip() for line in lines[:max_lines]]
+    if more:
+        out.append("    │ …")
+    return out
+
+
+def command_lines(
+    events: list[dict[str, Any]],
+    tz: tzinfo,
+    limit: int = MAX_COMMANDS_PER_EPISODE,
+    with_output: bool = False,
+) -> list[str]:
+    """Chronological command list with consecutive duplicates collapsed.
+
+    with_output: put the captured output (if any) under each command (source pack, SPEC §4).
+    """
     lines: list[str] = []
+    outputs: list[list[str]] = []
     last_key = None
     repeat = 0
     for ev in events:
@@ -59,12 +83,16 @@ def command_lines(events: list[dict[str, Any]], tz: tzinfo, limit: int = MAX_COM
         cmd = str(d.get("cmd") or d.get("file") or d.get("description") or "").strip()
         if not cmd:
             continue
+        out = output_lines(d) if with_output else []
         key = (cmd, d.get("cwd"))
         if key == last_key:
             repeat += 1
             lines[-1] = lines[-1].split("  (x")[0] + f"  (x{repeat + 1})"
+            if out:  # a repeated command shows its latest output
+                outputs[-1] = out
             continue
         last_key, repeat = key, 0
+        outputs.append(out)
         flag = ""
         if d.get("success") is False:
             code = d.get("exit_code")
@@ -73,10 +101,11 @@ def command_lines(events: list[dict[str, Any]], tz: tzinfo, limit: int = MAX_COM
         cwd = f"({d['cwd']}) " if d.get("cwd") else ""
         one_line = cmd.replace("\r", "").replace("\n", " ⏎ ")
         lines.append(f"{hhmm(ev['epoch'], tz)} {flag}{origin}{cwd}{one_line}")
-    if len(lines) > limit:
-        hidden = len(lines) - limit
-        lines = lines[: limit // 2] + [f"… ({hidden} more commands omitted) …"] + lines[-limit // 2 :]
-    return lines
+    entries = [[line, *out] for line, out in zip(lines, outputs)]
+    if len(entries) > limit:
+        hidden = len(entries) - limit
+        entries = entries[: limit // 2] + [[f"… ({hidden} more commands omitted) …"]] + entries[-limit // 2 :]
+    return [line for entry in entries for line in entry]
 
 
 def window_summary(events: list[dict[str, Any]], top: int = 12) -> list[tuple[str, float]]:
@@ -135,9 +164,13 @@ def episode_pack(ep: dict[str, Any], events: list[dict[str, Any]], tz: tzinfo) -
         for ev in sorted(notes + tasks, key=lambda e: e["epoch"]):
             out.append(f"- {hhmm(ev['epoch'], tz)} {ev.get('text')}")
 
-    cmds = command_lines(events, tz)
+    cmds = command_lines(events, tz, with_output=True)
     if cmds:
-        out.append("\n**Commands (chronological, secrets already redacted)**")
+        if any(line.startswith("    │") for line in cmds):
+            out.append("\n**Commands (chronological, secrets already redacted; `│` lines under a command = its"
+                       " captured output (first lines only) — use them for expected results / ผลลัพธ์ที่คาดหวัง)**")
+        else:
+            out.append("\n**Commands (chronological, secrets already redacted)**")
         out.append("```text")
         out.extend(cmds)
         out.append("```")

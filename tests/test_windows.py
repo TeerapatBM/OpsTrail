@@ -106,3 +106,140 @@ prompt | Out-Null
     assert "P@ssw0rd!" not in cmds[1] and "[REDACTED]" in cmds[1]
     assert shells[0]["duration_s"] == pytest.approx(2, abs=0.1)
     assert shells[0]["data"]["shell"].startswith("powershell 5.1")
+    assert "output" not in shells[0]["data"]  # output capture is opt-in
+    assert not (cfg.home / "transcripts").exists()
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_hook_captures_output(home):
+    """T-106: with [capture] shell_output = true the hook transcribes the session and attaches each command's output."""
+    from opstrail.config import load_config
+    from opstrail.service import OpsTrail
+
+    with (home / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n[capture]\nshell_output = true   # opt-in\nshell_output_lines = 15\n")
+    cfg = load_config(home)
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    # Output is written to the host (and so to the transcript) before each command's history entry + prompt,
+    # like an interactive session; the console host also echoes "PS C:\work> <command>" first.
+    script = f"""
+$ErrorActionPreference = 'Stop'
+. '{hook}'
+if (-not $global:OpsTrailTranscript) {{ throw 'transcript not started' }}
+$t = Get-Date
+$host.UI.WriteLine('PS C:\\work> Get-Service splunkd')
+'Status   Name               DisplayName'
+'------   ----               -----------'
+'Running  splunkd            Splunkd Service'
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Service splunkd'; ExecutionStatus='Completed'; StartExecutionTime=$t; EndExecutionTime=$t.AddSeconds(1)}})
+prompt | Out-Null
+1..40 | ForEach-Object {{ "log line $_" }}
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Content splunkd.log -Tail 40'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(5); EndExecutionTime=$t.AddSeconds(6)}})
+prompt | Out-Null
+'SPLUNK_HOST=10.10.20.5'
+'SPLUNK_PASSWORD=Pa55w0rd!Uf'
+'admin password: Pa55w0rd!Uf'
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Get-Content .\\uf.env'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(10); EndExecutionTime=$t.AddSeconds(11)}})
+prompt | Out-Null
+Add-History -InputObject ([pscustomobject]@{{CommandLine='Set-Location C:\\work'; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds(15); EndExecutionTime=$t.AddSeconds(15)}})
+prompt | Out-Null
+prompt | Out-Null
+"""
+    env = {**os.environ, "OPSTRAIL_HOME": str(cfg.home)}
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    svc = OpsTrail(cfg)
+    try:
+        svc.refresh()
+        shells = [e for e in svc.store.events_for_date(cfg.today()) if e["type"] == "shell"]
+        by_cmd = {e["data"]["cmd"]: e["data"] for e in shells}
+        assert len(shells) == 4, list(by_cmd)
+
+        svc_out = by_cmd["Get-Service splunkd"]["output"]
+        assert svc_out.splitlines()[0].startswith("Status") and "PS C:\\work>" not in svc_out
+        assert "Running  splunkd" in svc_out and "output_truncated" not in by_cmd["Get-Service splunkd"]
+
+        log = by_cmd["Get-Content splunkd.log -Tail 40"]
+        assert log["output"].splitlines() == [f"log line {i}" for i in range(1, 16)]  # first 15 lines only
+        assert log["output_truncated"] is True
+
+        env_out = by_cmd["Get-Content .\\uf.env"]["output"]
+        assert "Pa55w0rd!Uf" not in env_out and env_out.count("[REDACTED]") == 2
+        assert "SPLUNK_HOST=10.10.20.5" in env_out and "log line" not in env_out
+
+        assert "output" not in by_cmd["Set-Location C:\\work"]  # no output -> no field
+    finally:
+        svc.store.close()
+    # the transcript holds raw (unredacted) output: removed when the shell exits
+    assert list((cfg.home / "transcripts").glob("*.txt")) == []
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_hook_does_not_transcribe_while_paused(home):
+    """T-106 review: a shell started paused never transcribes; pausing later stops and deletes the transcript."""
+    from opstrail.config import load_config
+    from opstrail.service import OpsTrail
+
+    with (home / "config.toml").open("a", encoding="utf-8") as fh:
+        fh.write("\n[capture]\nshell_output = true\n")
+    cfg = load_config(home)
+    paused = cfg.home / "paused"
+    paused.write_text("", encoding="utf-8")
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$flag = '{paused}'
+$tdir = '{cfg.home / "transcripts"}'
+function Assert-NoTranscript($where) {{
+    if ($global:OpsTrailTranscript) {{ throw "transcript running $where" }}
+    if (@(Get-ChildItem -LiteralPath $tdir -Filter *.txt -ErrorAction SilentlyContinue).Count) {{ throw "transcript file $where" }}
+}}
+function Run($cmd, $sec) {{
+    Add-History -InputObject ([pscustomobject]@{{CommandLine=$cmd; ExecutionStatus='Completed'; StartExecutionTime=$t.AddSeconds($sec); EndExecutionTime=$t.AddSeconds($sec)}})
+    prompt | Out-Null
+}}
+. '{hook}'
+$t = Get-Date
+Assert-NoTranscript 'at start-up while paused'
+'STARTUP-PAUSED-SECRET'
+Run 'cmd-a-paused' 1
+Assert-NoTranscript 'after a paused command'
+Remove-Item -LiteralPath $flag
+Run 'cmd-b-resume' 2
+if (-not $global:OpsTrailTranscript) {{ throw 'transcript not started after resume' }}
+'visible output c'
+Run 'cmd-c' 3
+New-Item -ItemType File -Path $flag | Out-Null
+'PAUSED-LATER-SECRET'
+Run 'cmd-d-paused' 4
+Assert-NoTranscript 'after pausing'
+'MORE-PAUSED-SECRET'
+Run 'cmd-e-paused' 5
+Assert-NoTranscript 'while paused'
+Remove-Item -LiteralPath $flag
+Run 'cmd-f-resume' 6
+'visible output g'
+Run 'cmd-g' 7
+"""
+    env = {**os.environ, "OPSTRAIL_HOME": str(cfg.home)}
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    svc = OpsTrail(cfg)
+    try:
+        svc.refresh()
+        shells = [e for e in svc.store.events_for_date(cfg.today()) if e["type"] == "shell"]
+        by_cmd = {e["data"]["cmd"]: e["data"] for e in shells}
+        assert list(by_cmd) == ["cmd-b-resume", "cmd-c", "cmd-f-resume", "cmd-g"]
+        assert by_cmd["cmd-c"]["output"] == "visible output c"
+        assert by_cmd["cmd-g"]["output"] == "visible output g"
+        assert "output" not in by_cmd["cmd-b-resume"] and "output" not in by_cmd["cmd-f-resume"]
+        assert "SECRET" not in repr(shells)
+    finally:
+        svc.store.close()
+    assert list((cfg.home / "transcripts").glob("*.txt")) == []

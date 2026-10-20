@@ -69,6 +69,8 @@ both ingest safely. Duplicate inserts are blocked by a content hash.
   opstrail.db                SQLite store
   inbox/                     *.jsonl / *.tsv written by hooks & CLI
   shots/YYYY-MM-DD/*.png     screenshots
+  transcripts/pwsh-<pid>-<session>-<n>.txt   PowerShell transcripts (only with [capture] shell_output = true;
+                             raw output, deleted on pause / shell exit / after 12 h by the next shell start)
   logs/agent.log
   llm.json                   web UI AI settings; API key DPAPI-encrypted on Windows
   refresh.lock               cross-process lock for ingest + grouping
@@ -106,7 +108,7 @@ Every producer writes one JSON object per line to `~/.opstrail/inbox/<name>.json
 
 | type | `data` fields |
 |---|---|
-| `shell` | `cmd`*, `cwd`, `success`, `exit_code`, `shell`, `session` |
+| `shell` | `cmd`*, `cwd`, `success`, `exit_code`, `shell`, `session`, `output`, `output_truncated` (see 4a) |
 | `window` | `app`*, `title`, `pid`, `presence` (written by the agent with `duration_s`; `presence: true` = a meeting window open in the background while the user works elsewhere, not focus time) |
 | `note` | `text`*, `episode_id` |
 | `screenshot` | `path`*, `app`, `title`, `caption` |
@@ -119,6 +121,24 @@ Alternative compact line format for POSIX shells (`*.tsv`):
 `tsv1<TAB>epoch<TAB>exit_code<TAB>base64(cwd)<TAB>base64(cmd)<TAB>host<TAB>user<TAB>shell<TAB>session`
 
 All string values are passed through the redactor (`opstrail.redact`) before storage.
+
+## 4a. Command output (opt-in, PowerShell only)
+
+`[capture] shell_output = false` (default) / `shell_output_lines = 15`. When enabled (read by the hook when the
+shell starts), `hooks/powershell/OpsTrail.ps1` runs `Start-Transcript` per session into `~/.opstrail/transcripts/`.
+In `prompt` it reads what the transcript gained since the previous prompt (≤ 64 KB), drops the echoed
+`PS …> <command>` line(s), trims blank edges, keeps the first `shell_output_lines` lines (each ≤ 400 chars) and
+attaches them as `data.output` (`\n`-separated; `data.output_truncated = true` when more existed). The transcript
+offset advances on every prompt, so each command only gets its own output. An `Exiting` handler stops the transcript
+and deletes the file; files older than 12 h (shells closed with X) are deleted by the next shell start.
+Pause (`~/.opstrail/paused`): a shell started while paused does not start the transcript; when the flag appears, the
+next `prompt` stops the transcript and deletes the file (that prompt's output is discarded). The first `prompt`
+after the flag is removed starts a new file (`-<n>` suffix), so the first command after resume has no output.
+Ingest redacts `output` like every string, then (`events.normalize`) drops it unless `shell_output` is on and cuts it
+to `shell_output_lines`. `text`/search stay command-only. Source packs list each command's output (max 15 lines,
+`    │ ` prefix, `│ …` when truncated) under the command; worklogs and title prompts don't. Not captured: bash/zsh
+(no portable transcript), hosts without transcription (command still recorded), and output after the user runs
+`Stop-Transcript` (it stops OpsTrail's transcript too).
 
 ## 4b. Activity classification
 
@@ -226,7 +246,8 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
   every AI generation, on demand in the editor, via MCP `fact_check`, and by the eval.
 * **AI episode titles**: one LLM call renames the day's auto-titled episodes (JSON contract), locking titles.
 * **Evals** (`evals/`, `opstrail eval [--llm]`): golden-day fixtures + expectations (episode count, meetings,
-  titles, exact meeting time, secrets redacted; with `--llm`: must-mention facts, forbidden strings,
+  titles, exact meeting time, secrets redacted in stored text + data, source-pack facts `[case.pack] must_contain`;
+  per-case `capture = {…}` config; with `--llm`: must-mention facts, forbidden strings,
   fact-check, skeleton coverage ≥ 70 %). Deterministic evals run in CI; the eval is the referee for changes.
 
 ## 7b. Web UI (localhost)
@@ -268,12 +289,17 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
 
 ## 8. Privacy & security
 
-* Redaction patterns: private keys, cloud keys, JWTs, bearer tokens, URL credentials,
-  `--password`/`-Password`/`ConvertTo-SecureString` arguments, `key=value` secrets,
+* Redaction patterns: private keys (also a block cut off by truncation), cloud keys, JWTs, bearer tokens, URL
+  credentials, `--password`/`-Password`/`ConvertTo-SecureString` arguments, `key=value` secrets (incl. env-style
+  `SPLUNK_PASSWORD=`),
   `net user` passwords, `mysql -p…`, `sshpass -p`. Extendable via `redaction.extra_patterns`.
 * Exclusions: `capture.exclude_apps`, `capture.exclude_title_patterns` (private
   browsing, banking, chat, password managers by default).
 * Pause: hotkey, `opstrail pause`, or the `paused` flag file (hooks honour it too).
+* Command output capture is off by default. Its transcript file holds raw (unredacted) output on the local disk
+  while the shell runs; pausing stops and deletes it at the next prompt (see §4a for cleanup).
+  Output lines are cut at 400 chars, so a quoted secret whose closing quote was cut off is masked to the end of
+  the line.
 * Hotkeys on Windows use `RegisterHotKey` (only our combos are delivered – no keyboard hook / keylogging).
 * `refresh()` (ingest + grouping) runs under a cross-process file lock (`~/.opstrail/refresh.lock`).
 * `opstrail purge` deletes raw events by date.

@@ -60,3 +60,28 @@ date = "2026-10-22"
   must_mention = ["514", "change window"]
   must_not_contain = []
   max_unsupported = 0
+
+# T-106: PowerShell output capture is on. The value proving the step worked ("Running", "TcpTestSucceeded : True",
+# the UF's source address) exists ONLY in the captured command output, so the SOP's expected-result sections can
+# only state it if the source pack carries the output. Output that printed a password must stay redacted.
+[[case]]
+name = "sop-output-day"
+day = "days/sop-output-day-01.jsonl"
+date = "2026-10-23"
+projects = { "Splunk" = ["splunk"] }
+capture = { shell_output = true, shell_output_lines = 15 }
+
+  [case.episodes]
+  count_min = 1
+  count_max = 1
+  titles_contain = ["Splunk"]
+
+  [case.pack]
+  must_contain = ["Running  SplunkForwarder", "TcpTestSucceeded : True", "10.10.30.41"]
+
+  [case.doc]
+  template = "sop"
+  episodes_with_title = "Splunk"
+  must_mention = ["Running", "TcpTestSucceeded", "9997"]
+  must_not_contain = ["Pa55w0rd!Uf"]
+  max_unsupported = 0

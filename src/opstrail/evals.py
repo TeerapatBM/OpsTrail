@@ -1,6 +1,6 @@
 """Evaluation harness ("golden days"): the shared referee for Claude/GPT changes.
 
-Deterministic checks (always): episode grouping, meetings, titles.
+Deterministic checks (always): episode grouping, meetings, titles, redaction, source-pack facts.
 LLM checks (--llm): generate a document with the configured provider, then check required facts,
 forbidden strings (secrets), fact-check (invented values), skeleton coverage and TODO count.
 """
@@ -55,7 +55,10 @@ def _config_for(home: Path, case: dict[str, Any], llm_from: Config | None) -> Co
     home.mkdir(parents=True, exist_ok=True)
     projects = case.get("projects") or {}
     lines = ['[general]', 'timezone = "Asia/Bangkok"', 'author = "Eval"', f'export_dir = "{(home / "exports").as_posix()}"',
-             '[projects]']
+             '[capture]']
+    for key, value in (case.get("capture") or {}).items():
+        lines.append(f"{key} = {json.dumps(value)}")
+    lines.append('[projects]')
     for name, kws in projects.items():
         lines.append(f'"{name}" = {json.dumps(list(kws), ensure_ascii=False)}')
     (home / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -98,11 +101,21 @@ def run_case(case: dict[str, Any], *, use_llm: bool = False, llm_from: Config | 
                 res.check("meeting time exact", any(m["time"] == exp["meeting_time"] for m in meetings),
                           ", ".join(m["time"] for m in meetings))
             secrets = [s for s in case.get("doc", {}).get("must_not_contain", []) if s]
-            stored = json.dumps([e["text"] for e in svc.store.events_for_date(date)], ensure_ascii=False)
+            stored = json.dumps([[e["text"], e["data"]] for e in svc.store.events_for_date(date)], ensure_ascii=False)
             for secret in secrets:
                 res.check(f"secret “{secret[:4]}…” redacted in store", secret not in stored)
 
             doc = case.get("doc")
+            pack_needles = (case.get("pack") or {}).get("must_contain", [])
+            if doc and pack_needles:
+                pick = [e["id"] for e in eps if doc.get("episodes_with_title", "") in e["title"]]
+                pack = ""
+                if pick:
+                    sid = svc.start_doc_session(doc["template"], f"pack {res.name}", pick)["session_id"]
+                    pack = svc.source_pack(sid, mode="api")
+                for needle in pack_needles:
+                    res.check(f"source pack has “{needle}”", needle in pack)
+
             if use_llm and doc:
                 pick = [e["id"] for e in eps if doc.get("episodes_with_title", "") in e["title"]]
                 if not pick:
