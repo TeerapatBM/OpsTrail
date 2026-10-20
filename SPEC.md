@@ -61,6 +61,24 @@ Concurrency: SQLite in WAL mode with `busy_timeout`. Inbox files are claimed by 
 atomic rename (`*.jsonl` → `*.processing-<pid>`), so the agent and the MCP server can
 both ingest safely. Duplicate inserts are blocked by a content hash.
 
+### Agent system tray
+
+Optional `agent` extra includes `pystray>=0.19` and `Pillow>=10.0`. A daemon thread
+inside the agent runs the tray backend; unavailable libraries, headless backends and
+unsupported menus leave the agent running without a tray. macOS is skipped because
+its tray backend requires the main-thread Cocoa runloop (see
+[pystray threading requirements](https://pystray.readthedocs.io/en/latest/usage.html)).
+Generated icon: green = recording enabled, grey = paused flag present (not an idle indicator).
+Thai menu: open web, pause/resume, note, screenshot, today's Daily worklog, exit.
+Callbacks enqueue actions; the agent drains them during its loop/sleep (every 250 ms
+while sleeping), keeping SQLite/screenshot work on the agent thread. Pause uses
+`Agent.hotkey_pause`; note uses `osapi.spawn_popup`; screenshot uses the existing
+screenshot hotkey handler; browser links use `web.app.url` (configured loopback port).
+Today's worklog opens the saved session, creating it only if absent; web-disabled
+mode opens the existing review popup. Exit requests normal agent shutdown, including
+segment flush/heartbeat reset and tray stop with a bounded thread join. External pause
+changes refresh both icon and menu. No new config keys, events, API routes or storage.
+
 ## 3. Data locations
 
 ```

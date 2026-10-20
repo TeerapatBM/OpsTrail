@@ -16,6 +16,47 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 REPO = Path(__file__).resolve().parents[1]
 
 
+def test_tray_windows_thread_and_status_images(svc, monkeypatch):
+    """Exercise Windows thread lifecycle + real Pillow images without a desktop."""
+    import threading
+    from types import SimpleNamespace
+    pytest.importorskip("PIL.Image")
+    from opstrail.agent.daemon import Agent
+    from opstrail.agent.tray import Tray
+
+    ready, stopped = threading.Event(), threading.Event()
+
+    class Icon:
+        def __init__(self, name, image, title, menu):
+            self.icon = image
+
+        def run(self, setup):
+            setup(self)
+            ready.set()
+            stopped.wait(3)
+
+        def stop(self):
+            stopped.set()
+
+        def update_menu(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "pystray", SimpleNamespace(
+        Icon=Icon, Menu=lambda *items: items, MenuItem=lambda *args: args,
+    ))
+    tray = Tray(Agent(svc))
+    tray.start()
+    try:
+        assert ready.wait(2)
+        assert tray.icon.icon.getpixel((32, 32)) == (34, 197, 94, 255)
+        svc.cfg.set_paused(True)
+        tray.poll()
+        assert tray.icon.icon.getpixel((32, 32)) == (128, 128, 128, 255)
+    finally:
+        tray.stop()
+    assert not tray.thread.is_alive()
+
+
 def test_dpapi_roundtrip():
     from opstrail.secretstore import protect, unprotect
 

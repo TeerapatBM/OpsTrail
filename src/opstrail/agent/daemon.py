@@ -334,6 +334,9 @@ class Agent:
         self.running = False
 
     def run(self) -> None:
+        from opstrail.agent.tray import Tray
+
+        tray = Tray(self)
         poll = max(1.0, float(self.cfg.capture.get("poll_interval_s", 5)))
         try:
             signal.signal(signal.SIGTERM, self.stop)
@@ -343,13 +346,19 @@ class Agent:
         self.svc.record("system", {"message": "agent started"}, source="agent")
         log.info("agent started (poll %.0fs, home %s)", poll, self.cfg.home)
         try:
+            tray.start()
             while self.running:
+                tray.poll()
+                if not self.running:
+                    break
                 self.tick()
                 slept = 0.0
                 while self.running and slept < poll:
                     time.sleep(0.25)
                     slept += 0.25
+                    tray.poll()
         finally:
+            tray.stop()
             self.flush(self._clock())
             self.flush_presence(self._clock())
             self.svc.record("system", {"message": "agent stopped"}, source="agent")

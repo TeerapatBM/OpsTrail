@@ -16,6 +16,18 @@
                  เอกสาร .docx / .md
 ```
 
+## System tray (Windows)
+
+เมื่อติดตั้ง extra `agent` จะมี `pystray` และ `Pillow` สำหรับไอคอน OpsTrail ข้างนาฬิกา
+สีเขียว = กำลังบันทึก สีเทา = หยุดบันทึกชั่วคราว (อัปเดตเมื่อ pause ผ่าน hotkey/CLI/หน้าเว็บด้วย)
+คลิกขวาเพื่อ **เปิดหน้าเว็บ**, **หยุดบันทึก/บันทึกต่อ**, เพิ่ม **โน้ต**, **ถ่ายรูป**,
+เปิด **Daily worklog วันนี้** หรือ **ออก** เพื่อหยุด agent ไอคอนอาจอยู่ในเมนูไอคอนที่ซ่อนอยู่ของ Windows
+
+Daily worklog จะเปิดฉบับเดิมโดยเก็บข้อความที่แก้ไว้ หรือสร้างฉบับแรกถ้ายังไม่มี
+ถ้าปิดหน้าเว็บใน config จะใช้ popup review แทน หากยังไม่ได้ติดตั้ง extra หรือไม่มี desktop ที่รองรับ
+agent ยังบันทึกตามปกติและใช้ hotkey/CLI ได้ ไอคอนแบบ background นี้ไม่เปิดบน macOS
+ติดตั้งหรืออัปเดต extra ด้วย `python -m pip install -e ".[agent]"` แล้วรัน `opstrail restart`
+
 ## ติดตั้ง (Windows)
 
 1. ต้องมี Python 3.10+ (`winget install -e --id Python.Python.3.12`)

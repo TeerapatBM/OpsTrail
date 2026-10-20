@@ -52,7 +52,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - T-101 browser extension (GPT) · T-103 voice note (GPT)
 - ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
-- T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
+- T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
 
 Older backlog items (kept for reference):
@@ -66,7 +66,7 @@ Older backlog items (kept for reference):
 3. [x] **Teams digest** at recap time (T-105): optional protected Workflows webhook, title/time-only Adaptive Card.
 4. [x] (T-106) **PowerShell output capture** (opt-in): `Start-Transcript` per session, attach the first N lines of output
    to each shell event for "expected result" sections in SOPs. _suggested: Claude_
-5. [ ] **Tray icon** (pystray): status, pause/resume, open today's recap, open exports folder. _suggested: GPT_
+5. [x] **Tray icon** (T-108): status, pause/resume, web, note, screenshot, today's recap, exit; exports-folder shortcut deferred (outside card).
 6. [ ] **Better episode titles** using MCP sampling (ask the client model for a 6-word title) with fallback
    to the current heuristic.
 7. [ ] **Remote SSH capture**: helper to pull `~/.opstrail/inbox/*.tsv` from servers where the bash hook is
@@ -80,6 +80,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
 
 ## Done
+
+- T-108 system tray — GPT, 2026-10-20. Optional background tray with queued Thai menu actions, green/grey
+  pause state, existing-worklog preservation and graceful missing/backend fallback; normal shutdown cleanup.
+  Files: `agent/tray.py`, `agent/daemon.py`, `pyproject.toml`, `tests/test_tray.py`, `tests/test_windows.py`, SPEC/README/card. Python gates blocked by sandbox launcher; runner + desktop smoke pending.
 
 - T-105 Teams digest — GPT, 2026-10-20. Opt-in protected Settings webhook, title/time-only Adaptive Card 1.4,
   daemon-thread POST with one retry and safe logs; automatic recap gate includes yesterday's catch-up.
@@ -111,6 +115,9 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-108 tray startup/shutdown races, queued actions and worklog preservation;
+  run pytest + eval (shared Python cannot launch in Codex sandbox), then Windows desktop smoke (Thai menu, colors, screenshots, exit).
+
 - [ ] Claude (Claude Code): review T-105 secret persistence/API, capture-derived title suppression and background
   delivery/retry; run pytest + eval (shared Python cannot start in Codex sandbox), then synthetic Teams tenant smoke.
 
@@ -125,6 +132,21 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-108 (GPT): card authorizes optional pystray/Pillow in `agent`; generate a simple status dot
+  in memory (no asset/download). Run backend on its own daemon thread and enqueue callbacks for the agent
+  thread to avoid cross-thread SQLite and screenshot work. Poll queue/state during existing sleep (250 ms).
+  Pause reuses hotkey_pause; exit uses normal loop shutdown. Missing/headless/unsupported-menu backends
+  log a generic fallback; skip macOS explicitly because pystray requires the main Cocoa runloop there.
+- 2026-10-20 — T-108 (GPT): today's worklog opens an existing session without regenerating edits, otherwise
+  creates it via daily_recap; web links use configured loopback port via web.app.url. With web disabled,
+  worklog uses the existing review popup and open-web explains how to enable it. No config/schema changes.
+  Exports-folder action from the older backlog is deferred because the task card's menu is the contract.
+- 2026-10-20 — T-108 (GPT): pytest (targeted and full) and eval cannot launch the shared Windows Python
+  in this sandbox; do not substitute an interpreter or install dependencies. Tests/static review supplied;
+  runtime gates and interactive Windows smoke remain for runner/Claude/Bro.
+  Independent read-only GPT review found no blocker/major issue in queueing, pause sync, lifecycle races or
+  edit preservation. Added a delayed-backend shutdown regression test; execution is still pending.
 
 - 2026-10-20 — T-105 (GPT): actual webhook only in `recap.json` via existing secretstore (DPAPI on Windows;
   same base64/0600 fallback elsewhere). TOML key is empty/ignored; GET/POST return only `has_webhook`.
