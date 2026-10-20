@@ -68,8 +68,16 @@ def _read(cfg: Config) -> dict[str, Any]:
         return {}
 
 
-def load_settings(cfg: Config) -> LLMSettings:
+def _profile_data(cfg: Config, profile: str) -> dict[str, Any]:
+    if profile not in ("writer", "reviewer"):
+        raise LLMError("ไม่พบ profile AI")
     data = _read(cfg)
+    selected = data if profile == "writer" else data.get("reviewer", {})
+    return selected if isinstance(selected, dict) else {}
+
+
+def load_settings(cfg: Config, *, profile: str = "writer") -> LLMSettings:
+    data = _profile_data(cfg, profile)
     s = LLMSettings()
     for key in asdict(s):
         if key in data and data[key] not in (None, ""):
@@ -83,9 +91,10 @@ def load_settings(cfg: Config) -> LLMSettings:
     return s
 
 
-def save_settings(cfg: Config, values: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
+def save_settings(cfg: Config, values: dict[str, Any], api_key: str | None = None,
+                  *, profile: str = "writer") -> dict[str, Any]:
     """Persist settings. api_key: None = keep the stored key, "" = remove it, text = store (encrypted)."""
-    current = _read(cfg)
+    current = _profile_data(cfg, profile)
     s = LLMSettings()
     out: dict[str, Any] = {}
     for key, default in asdict(s).items():
@@ -103,34 +112,42 @@ def save_settings(cfg: Config, values: dict[str, Any], api_key: str | None = Non
             raise LLMError(f"{exc} – set the OPSTRAIL_LLM_API_KEY environment variable instead") from exc
     path = _path(cfg)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    root = _read(cfg)
+    if profile == "reviewer":
+        root["reviewer"] = out
+    else:
+        if "reviewer" in root:
+            out["reviewer"] = root["reviewer"]
+        root = out
+    path.write_text(json.dumps(root, indent=2), encoding="utf-8")
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
-    return public_settings(cfg)
+    return public_settings(cfg, profile=profile)
 
 
-def api_key(cfg: Config, s: LLMSettings | None = None) -> tuple[str, str]:
+def api_key(cfg: Config, s: LLMSettings | None = None, *, profile: str = "writer") -> tuple[str, str]:
     """(key, source) – source is 'stored', an env var name, or '' when missing."""
-    s = s or load_settings(cfg)
-    stored = _read(cfg).get("api_key")
+    s = s or load_settings(cfg, profile=profile)
+    stored = _profile_data(cfg, profile).get("api_key")
     if stored:
         try:
             return unprotect(stored), "stored"
         except (SecretError, ValueError):
             pass
-    for env in ("OPSTRAIL_LLM_API_KEY", PROVIDER_ENV.get(s.provider, "")):
+    generic_env = "OPSTRAIL_REVIEWER_API_KEY" if profile == "reviewer" else "OPSTRAIL_LLM_API_KEY"
+    for env in (generic_env, PROVIDER_ENV.get(s.provider, "")):
         if env and os.environ.get(env):
             return os.environ[env], env
     return "", ""
 
 
-def public_settings(cfg: Config) -> dict[str, Any]:
-    s = load_settings(cfg)
-    _, source = api_key(cfg, s)
+def public_settings(cfg: Config, *, profile: str = "writer") -> dict[str, Any]:
+    s = load_settings(cfg, profile=profile)
+    _, source = api_key(cfg, s, profile=profile)
     data = asdict(s)
-    stored = str(_read(cfg).get("api_key") or "")
+    stored = str(_profile_data(cfg, profile).get("api_key") or "")
     data.update(
         {
             "has_key": bool(source),
@@ -199,11 +216,11 @@ def _endpoint(s: LLMSettings) -> str:
     return (s.base_url or DEFAULT_BASE.get(s.provider, "")).rstrip("/")
 
 
-def complete(cfg: Config, system: str, user: str) -> LLMResult:
-    s = load_settings(cfg)
+def complete(cfg: Config, system: str, user: str, *, profile: str = "writer") -> LLMResult:
+    s = load_settings(cfg, profile=profile)
     if s.provider == "none":
         raise LLMError("no AI provider configured – open Settings in the web UI (or use Copy prompt)")
-    key, _ = api_key(cfg, s)
+    key, _ = api_key(cfg, s, profile=profile)
     if not key and not _local_endpoint(s):
         raise LLMError("API key missing – add it in Settings or set OPSTRAIL_LLM_API_KEY")
     model = _model(s)

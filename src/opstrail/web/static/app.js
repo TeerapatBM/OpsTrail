@@ -571,8 +571,10 @@ async function renderDoc(id) {
       <button class="btn" id="dl-md">⬇ .md</button>
       <button class="btn" id="add-src">+ เพิ่มงาน</button>
       <button class="btn" id="fc-btn" title="หา IP / version / hostname ในเอกสารที่ไม่มีในข้อมูลที่บันทึก">ตรวจข้อเท็จจริง</button>
+      <button class="btn" id="review-btn">ให้ AI ตรวจ</button>
     </div>
     <div id="fc"></div>
+    <div id="review-result" aria-live="polite"></div>
     <div id="ai-progress" class="banner small" role="status" hidden>AI กำลังเขียนเอกสาร…</div>
     <section id="version-diff" class="card pad" hidden>
       <h2>เทียบเวอร์ชันที่บันทึกแล้ว</h2>
@@ -597,6 +599,7 @@ async function renderDoc(id) {
   pv.addEventListener("click", (e) => { if (e.target.dataset.zoom) lightbox(e.target.src); });
   let loaded = d;
   const showVersion = (doc) => {
+    $("#review-result", v).textContent = "";
     loaded = doc;
     ta.value = doc.markdown || "";
     state.dirty = false;
@@ -695,6 +698,36 @@ async function renderDoc(id) {
   $("#fc-btn", v).addEventListener("click", async () => {
     try { if (!(await ensureSaved())) return; showFactCheck(await api(`/api/docs/${id}/factcheck?version=${loaded.version || ""}`)); }
     catch (e) { fail(e); }
+  });
+  $("#review-btn", v).addEventListener("click", async () => {
+    if (state.generating || aiPending) return;
+    state.generating = true;
+    const controls = $$("button, input, select, textarea", v);
+    const disabled = controls.map((el) => el.disabled);
+    controls.forEach((el) => { el.disabled = true; });
+    try {
+      if (state.dirty) {
+        await api(`/api/docs/${id}/save`, { body: { markdown: ta.value, change_note: "บันทึกก่อนให้ AI ตรวจ" } });
+        state.dirty = false;
+        await reload();
+        controls.forEach((el) => { el.disabled = true; });
+      }
+      const latest = loaded.versions.length ? loaded.versions[loaded.versions.length - 1].version : 0;
+      if (!latest || loaded.version !== latest) return toast("เลือก draft เวอร์ชันล่าสุดที่บันทึกแล้วก่อนให้ AI ตรวจ");
+      const box = $("#review-result", v);
+      box.textContent = "AI กำลังตรวจ draft…";
+      const r = await api(`/api/docs/${id}/review`, { body: {} });
+      showFactCheck(r.fact_check);
+      box.innerHTML = `<div class="card pad"><b>ผลตรวจ v${esc(r.version)} · ${esc(r.model)}</b>
+        <p class="muted small">ผลตรวจเป็นคำแนะนำ กรุณาตรวจหลักฐานก่อนแก้ไขหรือส่งเอกสาร</p>
+        ${r.issues.length ? `<ul>${r.issues.map((i) => `<li><b>${esc(i.severity)}</b> <code>${esc(i.quote)}</code>
+          <p>${esc(i.problem)}</p><p>${esc(i.suggestion)}</p></li>`).join("")}</ul>` : "<p>ไม่พบข้อเสนอแก้ไขจาก AI</p>"}</div>`;
+    } catch (e) { $("#review-result", v).textContent = ""; fail(e); }
+    finally {
+      controls.forEach((el, i) => { el.disabled = disabled[i]; });
+      $("#diff-btn", v).disabled = loaded.versions.length < 2;
+      state.generating = false;
+    }
   });
   let aiPending = false;
   const runAI = async () => {
@@ -870,7 +903,8 @@ async function renderSettings() {
     </div>
     <div class="card pad stack">
       <h2>AI สำหรับเขียนเอกสาร</h2>
-      <div class="muted small">ใช้กับปุ่ม “ให้ AI เขียน/ปรับ” — ข้อมูลที่ส่งไปคือ source pack ของเอกสารนั้น (password/token ถูกปิดบังแล้ว)</div>
+      <label class="field">ตั้งค่า profile<select id="llm-profile"><option value="writer">ผู้เขียน (writer)</option><option value="reviewer">ผู้ตรวจ (reviewer)</option></select></label>
+      <div class="muted small">writer ใช้กับ “ให้ AI เขียน/ปรับ”; reviewer ใช้กับ “ให้ AI ตรวจ” โดยส่ง draft และ source pack ที่ปิดบัง secrets แล้ว เลือก provider/model ต่างกันได้และเก็บ key แยกกัน</div>
       <div class="grid2">
         <label class="field">Provider<select id="provider">
           <option value="none">ไม่ใช้ (Copy/Paste prompt)</option>
@@ -977,6 +1011,19 @@ async function renderSettings() {
   });
   loadStyle();
   const fields = ["model", "base_url", "anthropic_workspace_id", "azure_endpoint", "azure_deployment", "azure_api_version", "max_tokens"];
+  const settingsUrl = () => $("#llm-profile", v).value === "reviewer" ? "/api/llm/reviewer" : "/api/llm";
+  const updateWriter = () => { if (settingsUrl() === "/api/llm") state.llm = s; };
+  const profileBusy = (busy) => {
+    for (const id of ["llm-profile", "save", "clear"]) $("#" + id, v).disabled = busy;
+    $("#test", v).disabled = busy || settingsUrl() !== "/api/llm";
+  };
+  $("#llm-profile", v).addEventListener("change", async () => {
+    profileBusy(true);
+    $("#testres", v).textContent = "";
+    $("#models", v).innerHTML = "";
+    try { s = await api(settingsUrl()); fill(s); profileBusy(false); }
+    catch (e) { fail(e); $("#llm-profile", v).disabled = false; }
+  });
   const fill = (x) => {
     $("#provider", v).value = x.provider;
     for (const f of fields) $("#" + f, v).value = x[f] ?? "";
@@ -1005,13 +1052,18 @@ async function renderSettings() {
     return body;
   };
   $("#save", v).addEventListener("click", async () => {
-    try { s = await api("/api/llm", { body: collect() }); fill(s); state.llm = s; toast("บันทึกการตั้งค่า AI แล้ว"); } catch (e) { fail(e); }
+    profileBusy(true);
+    try { s = await api(settingsUrl(), { body: collect() }); fill(s); updateWriter(); toast("บันทึกการตั้งค่า AI แล้ว"); } catch (e) { fail(e); }
+    finally { profileBusy(false); }
   });
   $("#clear", v).addEventListener("click", async () => {
     if (!confirm("ลบ API key ที่เก็บไว้?")) return;
-    try { s = await api("/api/llm", { body: { clear_key: true } }); fill(s); state.llm = s; toast("ลบ key แล้ว"); } catch (e) { fail(e); }
+    profileBusy(true);
+    try { s = await api(settingsUrl(), { body: { clear_key: true } }); fill(s); updateWriter(); toast("ลบ key แล้ว"); } catch (e) { fail(e); }
+    finally { profileBusy(false); }
   });
   $("#test", v).addEventListener("click", async () => {
+    profileBusy(true);
     const out = $("#testres", v);
     out.textContent = "กำลังทดสอบ…";
     try {
@@ -1023,6 +1075,7 @@ async function renderSettings() {
         (known ? "" : ` — <span class="badge warn">ไม่พบ model “${esc(cur)}” ใน account นี้</span> คลิกช่อง Model แล้วเลือกจากรายการ จากนั้นกดบันทึก`);
       $("#models", v).innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join("");
     } catch (e) { out.innerHTML = `<span class="badge bad">ไม่สำเร็จ</span> ${esc(e.message)}`; }
+    finally { profileBusy(false); }
   });
 }
 

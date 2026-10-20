@@ -52,7 +52,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
 - ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
-- T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
+- ~~T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT)~~ done · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
 
 Older backlog items (kept for reference):
@@ -80,6 +80,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
 
 ## Done
+
+- T-107 cross-model review — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Separate reviewer profile/keys,
+  strict JSON + one validation retry, deterministic warnings, version-bound doc_reviews, Thai editor/settings and advisory eval score.
+  Files: llm/review/service/store/evals/web, test_review/test_web/test_evals/web_editor_smoke, SPEC/README/card/plan. Python launcher blocked; Node syntax/diff checks pass; Playwright module missing.
 
 - T-103 voice note — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Ctrl+Alt+V + meeting-summary voice action,
   bounded recorder/Tk indicator, local small + explicit OpenAI/Azure, redacted voice notes, WAV cleanup.
@@ -125,6 +129,10 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-107 profile/key isolation, JSON validation/retry, redaction,
+  snapshot/version persistence, editor save/lock behavior and advisory eval scores. Run pytest + eval
+  (shared Python launcher cannot start in Codex sandbox), then extended Playwright smoke (module unavailable here).
+
 - [ ] Claude (Claude Code): review T-103 audio cleanup/cancel/pause, cross-process lock,
   episode attachment before transcription and provider credential isolation. Run pytest + eval
   (shared Python cannot launch in Codex sandbox), then real desktop microphone/timer/local-download
@@ -152,6 +160,24 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-107 (GPT): execute card inline/unattended; runner supplies Claude cross-review.
+  Legacy writer stays at llm.json root; reviewer is nested with the same fields and separate protected key.
+  Reviewer uses its stored key, OPSTRAIL_REVIEWER_API_KEY or matching provider environment key; never
+  writer's stored key/generic environment key. No dependencies, MCP changes, installs or network calls in development.
+- 2026-10-20 — T-107 (GPT): review latest saved draft, snapshot version and source material before network;
+  redact outbound draft/source and all stored/returned review strings using configured extra patterns.
+  Strict JSON object/issues schema (error/warning/info, 100 issues, 8000 chars/field); retry once only on
+  invalid JSON/schema or truncation. Safe generic errors, no upstream body echo. Deterministic unsupported
+  facts append warning issues; preserve fact_check in result JSON. Additive doc_reviews rows retain original
+  reviewed version under concurrent saves. Editor saves pending edits, requires latest, locks controls and
+  escapes review text. Optional automatic apply-fixes deferred to keep this card focused; manual edits work.
+- 2026-10-20 — T-107 (GPT): eval --llm invokes configured reviewer only; score = max(0, 100 - 20/error
+  - 5/warning), info free. Advisory column does not change existing gates; failed reviews show unavailable,
+  disabled reviewer omits column/calls. Explicit review/eval calls extend the prior AI-write-only outbound rule.
+  Targeted/full pytest and eval attempted with prescribed shared Python: launcher fails before startup with
+  "The file cannot be accessed by the system". Node syntax and git diff checks pass; extended Playwright
+  smoke cannot load missing playwright module. No alternate interpreter/install; runner gates remain required.
 
 - 2026-10-20 — T-103 (GPT): follow the card inline/unattended; no skill approval pauses, commits,
   installs or extra agent reviews (runner supplies Claude cross-review). Optional `voice` includes only

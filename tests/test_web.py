@@ -205,21 +205,23 @@ class FakeLLM(BaseHTTPRequestHandler):
             text = FakeLLM.reply if FakeLLM.reply is not None else "```markdown\n# SOP: จาก Claude\n\nok\n```"
             return self._send({"model": body["model"], "stop_reason": "end_turn",
                                "content": [{"type": "text", "text": text}]})
+        text = FakeLLM.review_reply if body.get("model") == "reviewer-test" else "# จาก OpenAI\n\n![x](shot://1)"
         return self._send({"model": body.get("model", "dep"), "choices": [
-            {"finish_reason": "stop", "message": {"content": "# จาก OpenAI\n\n![x](shot://1)"}}]})
+            {"finish_reason": "stop", "message": {"content": text}}]})
 
 
 @pytest.fixture()
 def fake_llm(monkeypatch):
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
     monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
-    for var in ("OPSTRAIL_LLM_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"):
+    for var in ("OPSTRAIL_LLM_API_KEY", "OPSTRAIL_REVIEWER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     server = HTTPServer(("127.0.0.1", 0), FakeLLM)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     FakeLLM.calls = []
     FakeLLM.reply = None
+    FakeLLM.review_reply = '{"issues": []}'
     FakeLLM.stream_mode = "ok"
     FakeLLM.stream_gate = None
     FakeLLM.stream_finished = threading.Event()
@@ -295,6 +297,65 @@ def test_http_errors_are_readable(cfg, fake_llm):
 def test_strip_fences_keeps_inner_code():
     assert llm.strip_fences("```markdown\n# T\n```bash\nls\n```\n```") == "# T\n```bash\nls\n```\n"
     assert llm.strip_fences("```bash\nls\n```\ntext\n```bash\npwd\n```").startswith("```bash")
+
+
+def test_reviewer_profile_and_review(client, svc, cfg, sample_day, fake_llm):
+    llm.save_settings(cfg, {"provider": "openai", "model": "writer"}, api_key="writer-key")
+    saved = client.post("/api/llm/reviewer", headers=H, json={
+        "provider": "anthropic", "model": "checker", "base_url": fake_llm, "api_key": "sk-test"})
+    assert saved.status_code == 200 and saved.json()["ready"]
+    assert "api_key" not in saved.json()
+    assert llm.load_settings(cfg).model == "writer"
+    assert "sk-test" not in (cfg.home / "llm.json").read_text()
+    client.post("/api/llm", headers=H, json={"model": "writer-2"})
+    assert client.get("/api/llm/reviewer").json()["effective_model"] == "checker"
+    svc.refresh()
+    sid = svc.start_doc_session("sop", "Review", [svc.list_episodes(DAY)[0]["id"]])["session_id"]
+    svc.save_draft(sid, "# Draft\nBackup 192.168.77.7")
+    FakeLLM.reply = json.dumps({"issues": [{"severity": "warning", "quote": "Backup",
+        "problem": "password=review-secret", "suggestion": "ตรวจหลักฐาน"}]})
+    assert client.post(f"/api/docs/{sid}/review", json={}).status_code == 403
+    r = client.post(f"/api/docs/{sid}/review", json={}, headers=H)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["model"] == "anthropic:checker" and out["version"] == 1
+    assert any(i["quote"] == "192.168.77.7" for i in out["issues"])
+    assert "review-secret" not in r.text
+    assert not out["fact_check"]["ok"]
+    row = svc.store.query("SELECT * FROM doc_reviews WHERE session_id = ?", (sid,))[0]
+    assert row["version"] == 1 and "review-secret" not in row["json"]
+    assert len(svc.store.versions(sid)) == 1
+    call = FakeLLM.calls[-1]
+    assert call["headers"]["x-api-key"] == "sk-test"
+    assert "Backup" in call["body"]["messages"][0]["content"]
+    assert "Sup3rS3cret" not in json.dumps(call)
+    assert client.post("/api/llm/reviewer", headers=H, json={"api_key": "  "}).json()["has_key"]
+    assert not client.post("/api/llm/reviewer", headers=H, json={"clear_key": True}).json()["has_key"]
+    assert llm.api_key(cfg)[0] == "writer-key"
+
+
+@pytest.mark.parametrize("reply", ["not json", '{"issues": {}}', '{"issues": [{"severity": "other"}]}'])
+def test_invalid_review_retries_once_without_saving(svc, cfg, fake_llm, reply):
+    from opstrail.service import OpsTrailError
+    llm.save_settings(cfg, {"provider": "anthropic", "base_url": fake_llm},
+                      api_key="sk-test", profile="reviewer")
+    sid = svc.start_doc_session("sop", "Review", date=DAY)["session_id"]
+    svc.save_draft(sid, "# Draft")
+    FakeLLM.reply = reply
+    with pytest.raises(OpsTrailError):
+        svc.review_draft(sid)
+    assert len(FakeLLM.calls) == 2
+    assert not svc.store.query("SELECT * FROM doc_reviews")
+
+
+def test_reviewer_never_uses_writer_credentials(cfg, fake_llm, monkeypatch):
+    llm.save_settings(cfg, {"provider": "anthropic", "base_url": fake_llm}, api_key="sk-test")
+    monkeypatch.setenv("OPSTRAIL_LLM_API_KEY", "writer-env")
+    llm.save_settings(cfg, {"provider": "anthropic", "base_url": fake_llm}, profile="reviewer")
+    assert not llm.public_settings(cfg, profile="reviewer")["has_key"]
+    with pytest.raises(llm.LLMError):
+        llm.complete(cfg, "s", "u", profile="reviewer")
+    assert not FakeLLM.calls
 
 
 def test_anthropic_multi_workspace_key_needs_workspace_id(client, cfg, fake_llm):

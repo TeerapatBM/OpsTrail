@@ -32,6 +32,8 @@ class CaseResult:
     checks: list[tuple[str, bool, str]] = field(default_factory=list)
     doc: str = ""
     seconds: float = 0.0
+    reviewer_score: float | None = None
+    reviewer_error: bool = False
 
     def check(self, name: str, ok: bool, detail: str = "") -> None:
         self.checks.append((name, bool(ok), detail))
@@ -74,7 +76,7 @@ def _config_for(home: Path, case: dict[str, Any], llm_from: Config | None) -> Co
 
 
 def run_case(case: dict[str, Any], *, use_llm: bool = False, llm_from: Config | None = None) -> CaseResult:
-    from opstrail.service import OpsTrail
+    from opstrail.service import OpsTrail, OpsTrailError
 
     res = CaseResult(case.get("name", "case"))
     t0 = time.time()
@@ -139,6 +141,18 @@ def run_case(case: dict[str, Any], *, use_llm: bool = False, llm_from: Config | 
                     ratio = len(covered) / len(heads) if heads else 1.0
                     res.check("skeleton sections covered ≥ 70%", ratio >= 0.7, f"{len(covered)}/{len(heads)}")
                     res.check("TODOs reported", True, str(fc["todos"]))
+                    from opstrail import llm
+                    if llm.load_settings(cfg, profile="reviewer").provider != "none":
+                        try:
+                            review = svc.review_draft(sid)
+                        except OpsTrailError:
+                            res.reviewer_error = True
+                        else:
+                            # Advisory score, separate from deterministic/generation gates.
+                            # Deduct 20/error and 5/warning; info has no penalty.
+                            penalty = sum({"error": 20, "warning": 5, "info": 0}[i["severity"]]
+                                          for i in review["issues"])
+                            res.reviewer_score = max(0, 100 - penalty)
         finally:
             svc.store.close()
     res.seconds = round(time.time() - t0, 1)
@@ -160,6 +174,10 @@ def report(results: list[CaseResult], use_llm: bool) -> str:
     passed = sum(r.passed for r in results)
     lines = [f"# OpsTrail eval — {time.strftime('%Y-%m-%d %H:%M')}",
              f"mode: {'deterministic + LLM' if use_llm else 'deterministic'} · score **{passed}/{total}**", ""]
+    if use_llm and any(r.reviewer_score is not None or r.reviewer_error for r in results):
+        lines += ["| Case | Reviewer score /100 (advisory) |", "|---|---:|"]
+        lines += [f"| {r.name} | {'unavailable' if r.reviewer_error else r.reviewer_score if r.reviewer_score is not None else '—'} |" for r in results]
+        lines.append("")
     for r in results:
         lines.append(f"## {'✅' if r.ok else '❌'} {r.name} ({r.passed}/{len(r.checks)}, {r.seconds}s)")
         for name, ok, detail in r.checks:

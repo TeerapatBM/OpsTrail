@@ -302,6 +302,20 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         models = llm.list_models(ot.cfg)
         return {"ok": True, "models": models[:200]}
 
+    def reviewer_get(r: Request, b: dict) -> Any:
+        return llm.public_settings(ot.cfg, profile="reviewer")
+
+    def reviewer_save(r: Request, b: dict) -> Any:
+        key = b.get("api_key")
+        if b.get("clear_key"):
+            key = ""
+        elif key is not None and not str(key).strip():
+            key = None
+        return llm.save_settings(ot.cfg, b, key, profile="reviewer")
+
+    def doc_review(r: Request, b: dict) -> Any:
+        return ot.review_draft(_int(r.path_params["id"]))
+
     # --- quality loop
     def profile_get(r: Request, b: dict) -> Any:
         return ot.profile()
@@ -363,6 +377,9 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         Route("/api/llm", api(llm_get)),
         Route("/api/llm", api(llm_save, body=True), methods=["POST"]),
         Route("/api/llm/test", api(llm_test, body=True), methods=["POST"]),
+        Route("/api/llm/reviewer", api(reviewer_get)),
+        Route("/api/llm/reviewer", api(reviewer_save, body=True), methods=["POST"]),
+        Route("/api/docs/{id:int}/review", api(doc_review, body=True), methods=["POST"]),
         Route("/api/profile", api(profile_get)),
         Route("/api/profile", api(profile_save, body=True), methods=["POST"]),
         Route("/api/docs/{id:int}/factcheck", api(doc_factcheck)),

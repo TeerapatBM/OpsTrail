@@ -59,6 +59,11 @@ async function smoke() {
         { op: 'equal', before: '# คู่มือ\nติดตั้งระบบ', after: '# คู่มือ\nติดตั้งระบบ' },
         { op: 'replace', before: a.slice('# คู่มือ\nติดตั้งระบบ'.length), after: b.slice('# คู่มือ\nติดตั้งระบบ'.length) }] });
     }
+    if (url.pathname === '/api/docs/1/review') {
+      assert.equal(req.headers['x-opstrail'], '1');
+      return json({ version: latest, model: 'checker<script>', fact_check: { ...factCheck, version: latest },
+        issues: [{ severity: 'warning', quote: '<script>alert(1)</script>', problem: '<img src=x onerror=alert(1)>', suggestion: 'ตรวจหลักฐาน' }] });
+    }
     if (url.pathname === '/api/docs/1/generate') {
       assert.equal(url.searchParams.get('stream'), '1');
       assert.equal(req.headers['x-opstrail'], '1');
@@ -98,6 +103,11 @@ async function smoke() {
     await page.locator('#diff-to').selectOption('1');
     await page.waitForFunction(() => !document.querySelector('#diff-output ins'));
     await page.locator('#diff-close').click();
+    await page.locator('#review-btn').click();
+    await page.waitForFunction(() => document.querySelector('#review-result li'));
+    assert.equal(await page.locator('#review-result script, #review-result img').count(), 0);
+    assert.match(await page.locator('#review-result').textContent(), /checker<script>/);
+    assert.equal(await page.locator('#ver').inputValue(), '2');
     await page.locator('#ai').click();
     await page.waitForFunction(() => document.querySelector('#md').value === '# กำลังเขียนไทย');
     assert(await page.locator('#save').isDisabled());
@@ -126,7 +136,7 @@ async function smoke() {
     await page.locator('#diff-btn').click();
     await page.waitForFunction(() => document.querySelector('#diff-output ins'));
     assert.deepEqual(errors, []);
-    console.log('PASS Playwright: diff selection/escaping, live output before completion, locked actions/navigation, saved fact-check, error recovery, mobile/dark; no console errors');
+    console.log('PASS Playwright: review escaping/version preservation, diff selection/escaping, live output before completion, locked actions/navigation, saved fact-check, error recovery, mobile/dark; no console errors');
   } finally {
     if (browser) await browser.close();
     server.closeAllConnections();

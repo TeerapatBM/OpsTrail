@@ -378,6 +378,43 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
 
 ## 7b. Web UI (localhost)
 
+### Cross-model draft review (T-107)
+
+`llm.json` retains the legacy writer settings at the root and adds optional `reviewer`
+with the same LLMSettings fields plus its own protected `api_key`. Writer/profile saves
+preserve the other profile. Reviewer key resolution: its stored key, then
+`OPSTRAIL_REVIEWER_API_KEY`, then the selected provider's environment key; never the
+writer's stored key or `OPSTRAIL_LLM_API_KEY`. Default reviewer provider is `none`.
+`GET/POST /api/llm/reviewer` use the writer settings response/schema and blank-key/clear-key
+semantics; no response exposes a key. Settings selects writer/reviewer separately.
+
+`POST /api/docs/{id}/review` (JSON `{}`, normal LocalOnly/X-OpsTrail protections) calls
+`OpsTrail.review_draft(session_id)` on the latest saved nonempty draft. The editor saves
+pending edits first, requires the latest version and locks actions while awaiting review.
+No implicit generation or draft changes. Missing draft/configuration and provider/JSON
+failures return safe JSON 400; provider bodies are not exposed. No MCP contract change.
+
+Snapshot the draft/version and source pack before calling the reviewer. Redact all outbound
+and persisted review strings, including extra patterns. System prompt treats source/draft
+as untrusted data and requests unsupported claims, missing steps, wording and secrets.
+Response must be JSON only, exactly `{issues: [{severity, quote, problem, suggestion}]}`;
+severity is `error|warning|info`, all values strings, nonempty problem, ≤100 issues and
+≤8000 characters per field. Invalid JSON/schema or truncated output retries once, with
+the same snapshot; invalid results are never stored. Network failures are not retried.
+Append deterministic `quality.fact_check` unsupported values as warning issues and return
+`{issues, model, version, fact_check}`. UI escapes every review field; fixes remain manual.
+
+Additive SQLite table `doc_reviews(id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL,
+version INTEGER NOT NULL, json TEXT NOT NULL, model TEXT NOT NULL, created_at TEXT NOT NULL)`;
+index `(session_id, version, id)`. One row per successful review; JSON stores the combined
+result, created_at is UTC ISO time. Concurrent saves do not change the reviewed version.
+
+`eval --llm` uses the optional configured reviewer on each generated document and adds an
+advisory reviewer score column (100 minus 20/error and 5/warning, minimum zero; info = 0).
+Failures show `unavailable`; disabled reviewers omit the column and make no reviewer call.
+Reviewer scores never alter the existing deterministic/generation checks or gate score.
+Explicit review and `eval --llm` authorize calls to the configured reviewer provider.
+
 * Starlette app (`opstrail.web.app`), vanilla-JS SPA in `web/static` (no CDN, no build step).
 * Bound to 127.0.0.1 (`[web] port`, default 8765). Middleware `LocalOnly`: Host header must be loopback
   (DNS-rebinding defence); non-GET requests need `X-OpsTrail: 1` and a same-origin Origin (CSRF defence);

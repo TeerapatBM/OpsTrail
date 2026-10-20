@@ -106,6 +106,8 @@ URL เก็บใน `~/.opstrail/recap.json` ด้วย Windows DPAPI เ�
 
 - **✨ ตั้งชื่องานด้วย AI** (หน้า วันนี้/งาน) — เปลี่ยนชื่ออัตโนมัติเป็นภาษาคนในครั้งเดียว
 - **ตรวจข้อเท็จจริง** (หน้าเอกสาร, ทำอัตโนมัติหลัง AI เขียน) — เตือนถ้ามี IP / version / hostname / port ที่ไม่มีในข้อมูลที่บันทึก (AI อาจเดา)
+- **ให้ AI ตรวจ** — ตั้งค่า → profile **ผู้ตรวจ (reviewer)** เลือก provider/model และ API key แยกจาก writer (เช่น Claude เขียน แล้ว GPT ตรวจ) จากนั้นกดปุ่มใน editor ระบบบันทึกการแก้ไขที่ค้างไว้ก่อน ส่ง draft ล่าสุดกับ source pack ที่ redact แล้ว และแสดงปัญหา/คำแนะนำพร้อมผลตรวจข้อเท็จจริง ผลตรวจผูกกับเวอร์ชันเดิมและไม่แก้ draft อัตโนมัติ; เลือกเวอร์ชันล่าสุดก่อนตรวจ ผลจาก AI ยังต้องตรวจหลักฐานเอง
+- `opstrail eval --llm` แสดงคอลัมน์ reviewer score เมื่อเปิดใช้ reviewer (100 หัก error 20 / warning 5; info ไม่หัก) เป็นคำแนะนำแยกจากคะแนน gate; ถ้าตรวจไม่สำเร็จแสดง `unavailable` โดยไม่กระทบ deterministic checks
 - **เทียบเวอร์ชัน** (หน้าเอกสาร เมื่อบันทึกแล้ว ≥2 เวอร์ชัน) — เลือกเวอร์ชันใดก็ได้สองเวอร์ชันเพื่อดูข้อความเดิม/ใหม่คู่กัน พร้อมขีดฆ่าส่วนที่ลบและขีดเส้นใต้ส่วนที่เพิ่ม รองรับการไฮไลต์คำภาษาไทย ไม่รวมการแก้ไขที่ยังไม่บันทึก
 - **AI streaming** — เห็นข้อความใน editor ขณะ AI กำลังเขียน (Claude / OpenAI-compatible / Azure OpenAI) เมื่อเสร็จจะบันทึกเป็นเวอร์ชันใหม่และตรวจข้อเท็จจริงให้ ระหว่างเขียนจะล็อกการแก้ไข/บันทึก/สลับเวอร์ชัน ถ้า provider ส่งข้อผิดพลาดหรือ stream ขาด จะคืนข้อความเดิมโดยไม่บันทึกคำตอบที่ยังไม่ครบ หากการเชื่อมต่อขาดหลัง server บันทึกแล้ว ให้ตรวจประวัติเวอร์ชันก่อนลองใหม่
 - **เรียนจากการแก้ไข** — ทุกครั้งที่คุณแก้ draft ของ AI แล้วบันทึก ระบบจำส่วนที่แก้ และใช้ใน prompt ครั้งถัดไป
@@ -195,7 +197,7 @@ time = "17:30"
   ถ้าต้องการให้ข้อมูลลูกค้าอยู่ใน tenant ของบริษัท ใช้ **Azure OpenAI** หรือ model ในเครื่อง (Ollama)
 - **ไม่ใช่ keylogger**: บน Windows ใช้ `RegisterHotKey` — Windows แจ้งเฉพาะปุ่มลัดของ OpsTrail ไม่มีการดักทุกปุ่มที่พิมพ์ (ไม่โดน EDR มองว่าเป็น keyboard hook)
 - ข้อมูลหลักอยู่ใน `~/.opstrail` บนเครื่องตัวเอง; ส่งออกเมื่อ AI client อ่านผ่าน MCP,
-  ใช้ AI write, เปิด Teams digest หรือเลือก cloud backend สำหรับ Voice note
+  ใช้ AI write / AI ตรวจ (รวม `eval --llm`), เปิด Teams digest หรือเลือก cloud backend สำหรับ Voice note
 - password, token, key, connection string, JWT, `-Password`, `ConvertTo-SecureString`, URL credentials ฯลฯ
   ถูกแทนด้วย `[REDACTED]` ก่อนบันทึก เพิ่ม pattern เองได้ที่ `[redaction] extra_patterns`
 - แอป/หน้าต่างที่ไม่บันทึก: chat, password manager, banking, InPrivate/Incognito (แก้ได้)

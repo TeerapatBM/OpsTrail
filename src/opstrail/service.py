@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 import time
 from difflib import SequenceMatcher
 from collections.abc import Iterator
@@ -762,6 +763,40 @@ class OpsTrail:
         }
 
     # --------------------------------------------------------- quality loop
+    def review_draft(self, session_id: int) -> dict[str, Any]:
+        from opstrail import llm, quality, review
+        from opstrail.redact import compile_extra, redact_obj
+        from opstrail.store import _now
+
+        s = self._require_session(session_id)
+        v = self.store.get_version(s["id"])
+        if not v or not v["markdown"].strip():
+            raise OpsTrailError("ยังไม่มี draft ที่บันทึกไว้ให้ตรวจ")
+        if llm.load_settings(self.cfg, profile="reviewer").provider == "none":
+            raise OpsTrailError("ยังไม่ได้ตั้งค่า AI ผู้ตรวจ — เลือก reviewer ในหน้าตั้งค่า")
+        # Freeze draft and facts before the network call so concurrent saves cannot
+        # attach this review to a different version.
+        tpl = self.templates().get(s["template"])
+        sources = self._sources_markdown(s["id"])
+        extra = compile_extra(self.cfg.redaction.get("extra_patterns"))
+        payload = redact_obj({"draft": v["markdown"], "sources": self.source_pack(s["id"], mode="api")}, extra)
+        fc = quality.fact_check(payload["draft"], sources, tpl.skeleton if tpl else "")
+        fc["version"] = v["version"]
+        try:
+            issues, model = review.complete_review(self.cfg, json.dumps(payload, ensure_ascii=False))
+        except (llm.LLMError, ValueError, TypeError, KeyError, OSError):
+            # Provider errors may echo the prompt or credentials. Never expose them.
+            raise OpsTrailError("AI ตรวจไม่สำเร็จ — ตรวจการตั้งค่า reviewer หรือรูปแบบ JSON แล้วลองใหม่") from None
+        issues += [{"severity": "warning", "quote": u["value"],
+                    "problem": f"ไม่พบ {u['kind']} นี้ในแหล่งข้อมูล (deterministic)",
+                    "suggestion": "ตรวจหลักฐานหรือแทนด้วย [TODO]"} for u in fc["unsupported"]]
+        result = redact_obj({"issues": issues, "model": model, "version": v["version"], "fact_check": fc}, extra)
+        self.store.execute(
+            "INSERT INTO doc_reviews(session_id, version, json, model, created_at) VALUES(?,?,?,?,?)",
+            (s["id"], v["version"], json.dumps(result, ensure_ascii=False), result["model"], _now()),
+        )
+        return result
+
     def profile(self) -> dict[str, Any]:
         p = self.cfg.profile
         return {"author": p.get("author") or "", "effective_author": self.cfg.author, "team": p.get("team") or "",
