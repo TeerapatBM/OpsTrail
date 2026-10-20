@@ -11,4 +11,4 @@ report, man-days per customer, PDPA (notice, consent, retention, export/delete o
 
 ## Acceptance criteria
 - [ ] design reviewed by GPT (comments in the PR) and approved by Bro
-- [ ] task cards T-2xx created from it
+- [x] task cards T-2xx created from it (T-201…T-210, `**Status:** blocked` until Bro approves the design)

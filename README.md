@@ -203,6 +203,9 @@ time = "17:30"
 - แอป/หน้าต่างที่ไม่บันทึก: chat, password manager, banking, InPrivate/Incognito (แก้ได้)
 - ลบข้อมูลดิบ: `opstrail purge --date 2026-10-20` หรือ `--before 2026-09-01` (เอกสารไม่ถูกลบ)
 - ถ้าใช้กับทีม ให้แจ้งและขอความยินยอมตาม PDPA ว่าเก็บอะไร และให้ทุกคนดู/ลบข้อมูลตัวเองได้
+- **Team mode** (server กลาง + Entra ID SSO + knowledge base ของทีม + weekly report / man-days) ยังเป็นแค่ร่างออกแบบ
+  ที่รอ Bro อนุมัติ: [`docs/team-mode.md`](docs/team-mode.md) — หลักการคือข้อมูลดิบไม่ออกจากเครื่อง
+  ส่งขึ้น server เฉพาะงาน/เอกสารที่เจ้าของกดส่งเองหลังดู preview
 
 ## คำสั่ง CLI
 
