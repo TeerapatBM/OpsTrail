@@ -266,8 +266,109 @@ def meeting(cfg: Config, episode_id: int) -> None:
     bar.pack(fill="x", padx=10, pady=8)
     tk.Button(bar, text="บันทึก", command=save).pack(side="right")
     tk.Button(bar, text="ข้าม", command=root.destroy).pack(side="right", padx=6)
+
+    def speak() -> None:
+        from opstrail.agent.osapi import spawn_popup
+
+        if not spawn_popup(["voice", "--episode", str(ep["id"])]):
+            toast("เปิด voice ไม่สำเร็จ กรุณาพิมพ์สรุปแทน")
+
+    tk.Button(bar, text="พูดสรุป (Voice)", command=speak).pack(side="left")
     box.bind("<Control-Return>", save)
     root.bind("<Escape>", lambda _: root.destroy())
     _center(root, 680, 380)
     _focus(root, box)
+    root.mainloop()
+
+
+def voice(cfg: Config, episode_id: int | None = None) -> None:
+    """Keep Tk on the main thread and SQLite/audio/model work on one worker."""
+    import queue
+    import threading
+    import time
+
+    from opstrail.service import OpsTrail
+    from opstrail.voice import VoiceError, check_available, record_audio, transcribe_audio
+
+    try:
+        check_available(cfg)
+    except VoiceError as exc:
+        toast(str(exc), ms=8000)
+        return
+    import tkinter as tk
+
+    root = _root("OpsTrail — Voice note")
+    stop, cancel = threading.Event(), threading.Event()
+    updates: queue.Queue = queue.Queue()
+    started = time.monotonic()
+    backend = cfg.data.get("voice", {}).get("backend", "local")
+    label = tk.Label(root, text="กำลังเตรียมไมโครโฟน…", padx=12, pady=10)
+    label.pack()
+    tk.Label(root, text="เสียงอยู่ในเครื่อง" if backend == "local" else f"ส่งเสียงไป {backend} เพื่อถอดเสียง").pack()
+    stop_button = tk.Button(root, text="หยุดและถอดเสียง", command=stop.set)
+    stop_button.pack(pady=8)
+
+    def cancel_capture(_: Any = None) -> None:
+        cancel.set()
+        stop.set()
+        root.withdraw()  # worker still cleans WAV, including an in-flight API call
+
+    tk.Button(root, text="ยกเลิก", command=cancel_capture).pack(pady=(0, 8))
+    root.protocol("WM_DELETE_WINDOW", cancel_capture)
+    root.bind("<Escape>", cancel_capture)
+
+    def record(path, stopped, cancelled):
+        updates.put(("recording", None))
+        record_audio(path, stopped, cancelled)
+
+    def transcribe(config, path):
+        updates.put(("transcribing", None))
+        return transcribe_audio(config, path)
+
+    def work() -> None:
+        svc = None
+        try:
+            svc = OpsTrail(cfg)
+            result = svc.record_voice(episode_id, stop=stop, cancel=cancel,
+                                      recorder=record, transcriber=transcribe)
+            updates.put(("done", "บันทึก voice note แล้ว" if result and result.get("event_id") else "ยกเลิก voice note แล้ว"))
+        except VoiceError as exc:
+            updates.put(("done", str(exc)))
+        except Exception:
+            updates.put(("done", "บันทึก voice note ไม่สำเร็จ กรุณาลองใหม่"))
+        finally:
+            if svc is not None:
+                svc.store.close()
+
+    state = "preparing"
+
+    def poll() -> None:
+        nonlocal state, started
+        if cfg.is_paused():
+            cancel_capture()
+        while True:
+            try:
+                state, message = updates.get_nowait()
+            except queue.Empty:
+                break
+            if state == "recording":
+                started = time.monotonic()
+            elif state == "done":
+                root.destroy()
+                if not cancel.is_set():
+                    toast(message, ms=5000)
+                return
+        if state == "recording":
+            elapsed = min(60, int(time.monotonic() - started))
+            label.config(text=f"กำลังบันทึกเสียง {elapsed:02d} / 60 วินาที")
+            if elapsed >= 60:
+                stop.set()
+        elif state == "transcribing":
+            label.config(text="กำลังถอดเสียง… (ครั้งแรกอาจดาวน์โหลด model)")
+            stop_button.config(state="disabled")
+        root.after(100, poll)
+
+    _center(root, 420, 200)
+    threading.Thread(target=work, name="opstrail-voice", daemon=False).start()
+    root.after(100, poll)
     root.mainloop()

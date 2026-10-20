@@ -95,6 +95,8 @@ changes refresh both icon and menu. No new config keys, events, API routes or st
   browser_token              random per-install browser ingest token (Settings → extension Options)
   browser_token.lock         cross-process pairing-token creation lock
   refresh.lock               cross-process lock for ingest + grouping
+  voice.lock                 cross-process voice capture/transcription lock
+  models/                    faster-whisper small model cache (downloaded on first local use)
   paused                     flag file – when present nothing is captured
 ~/Documents/OpsTrail/        exports (config: general.export_dir)
 <repo>/templates/            document templates (config: general.templates_dir)
@@ -143,6 +145,44 @@ Alternative compact line format for POSIX shells (`*.tsv`):
 `tsv1<TAB>epoch<TAB>exit_code<TAB>base64(cwd)<TAB>base64(cmd)<TAB>host<TAB>user<TAB>shell<TAB>session`
 
 All string values are passed through the redactor (`opstrail.redact`) before storage.
+
+### Voice notes (T-103)
+
+Optional extra `voice = [sounddevice>=0.4, faster-whisper>=1.0]`; absent/broken optional
+libraries show a Thai install toast, leaving ordinary notes/capture available.
+`[hotkeys] voice = "<ctrl>+<alt>+v"` uses the existing RegisterHotKey path on Windows.
+`opstrail popup voice [--episode ID]` and the meeting-summary popup's voice button launch
+a separate process with an always-on-top Tk timer, stop/transcribe button and cancel action.
+Default microphone, mono PCM int16 at 16 kHz, 100 ms reads, at most 60 seconds of frames.
+The indicator also signals stop at 60 seconds. No automatic meeting audio capture.
+
+`[voice] backend = "local"` (default), `"openai"` or `"azure"`:
+- local: faster-whisper `small`, CPU/int8, automatic language detection (Thai/English),
+  VAD enabled; model cache under `$OPSTRAIL_HOME/models`. First use downloads model weights.
+  No audio uploads. No fallback to cloud on local failure.
+- openai: HTTPS `https://api.openai.com/v1/audio/transcriptions`, multipart WAV + `whisper-1`.
+- azure: configured Settings `azure_endpoint`, `azure_api_version`; separate
+  `[voice] azure_deployment = ""` must name a Whisper deployment. HTTPS deployment audio
+  transcriptions route. Cloud uses protected Settings key only when its provider matches
+  backend, otherwise backend-specific `OPENAI_API_KEY` / `AZURE_OPENAI_API_KEY`.
+  Never reuse a saved key from another provider. 120-second HTTP timeout, no redirects/retries.
+  See [OpenAI transcription API](https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create)
+  and [Azure Whisper REST quickstart](https://learn.microsoft.com/en-us/azure/ai-services/openai/whisper-quickstart?pivots=rest-api).
+
+Audio exists only in a restricted temporary `opstrail-voice-*.wav` in system TEMP;
+delete in `finally` on success, cancellation, recording/transcription/storage failure.
+Forced process termination/power loss can leave a temporary file; no durable audio inbox.
+Cloud backends explicitly opt in to raw audio upload (audio cannot be text-redacted).
+Esc/close cancels; in-flight transcription finishes for cleanup but its result is discarded.
+Pause prevents recording and discards results before transcription/save; UI observes pause
+every 100 ms while open. Missing microphone/model/network/key returns a generic Thai error,
+without logging upstream bodies or raw transcript. One capture/transcription per home via voice.lock.
+
+`OpsTrail.record_voice` delegates to `voice.capture_note`; worker owns its SQLite connection.
+Freeze explicit meeting episode or most recent current/just-ended episode within
+`episodes.note_attach_min` (default 15) before transcription; otherwise use normal note grouping.
+Save through `add_note`/`record` redaction as existing schema-v1 `note`, `source = "voice"`.
+No new MCP tool, API route, event type or database column.
 
 ## 4a. Command output (opt-in, PowerShell only)
 
