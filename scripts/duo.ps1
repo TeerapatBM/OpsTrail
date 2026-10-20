@@ -87,6 +87,12 @@ function Find-Tool([string]$Name, [string]$EnvName) {
     if ($o) { return $o }
     $c = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($c) { return $c.Source }
+    # installed but not on PATH yet (terminal/VS Code opened before the install): look in the usual places
+    if ($IsWin) {
+        $cands = @((J $env:USERPROFILE '.local' 'bin' "$Name.exe"), (J $env:APPDATA 'npm' "$Name.cmd"),
+                   (J $env:LOCALAPPDATA 'Programs' $Name "$Name.exe"))
+        foreach ($f in $cands) { if ($f -and (Test-Path -LiteralPath $f)) { return $f } }
+    }
     return $null
 }
 
@@ -269,9 +275,10 @@ function Invoke-Agent([string]$Agent, [string]$Role, [string]$PromptText, [strin
             do {
                 $attempt++
                 $a = @('exec')
-                if ($Role -eq 'review') { $a += @('--sandbox', 'read-only') }
+                # (--full-auto was removed in Codex CLI 0.15x; --sandbox + approval_policy works on old and new versions)
+                if ($Role -eq 'review') { $a += @('--sandbox', 'read-only', '-c', 'approval_policy=never') }
                 elseif ($script:CodexFull) { $a += '--dangerously-bypass-approvals-and-sandbox' }
-                else { $a += '--full-auto' }
+                else { $a += @('--sandbox', 'workspace-write', '-c', 'approval_policy=never') }
                 if ($CodexModel) { $a += @('-m', $CodexModel) }
                 $a += @('-o', $out)
                 $code = Invoke-Native $script:CodexExe $a $Wt $pf $log $err $timeout
