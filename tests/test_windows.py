@@ -16,6 +16,76 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 REPO = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_ui_snapshot_launcher_is_ascii_and_parses():
+    path = REPO / 'scripts/ui-snapshots.ps1'
+    path.read_bytes().decode('ascii')
+    # Parse without executing: no browser, Python launcher, real profile or display needed.
+    quoted = str(path).replace("'", "''")
+    script = ("$tokens=$null; $errors=$null; "
+              f"[System.Management.Automation.Language.Parser]::ParseFile('{quoted}', "
+              "[ref]$tokens, [ref]$errors) | Out-Null; "
+              "if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }")
+    subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                   check=True, timeout=15, capture_output=True)
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_ui_snapshot_launcher_matrix_and_environment(tmp_path):
+    """Run the launcher with fake processes; no browser or real user home."""
+    launcher = str(REPO / 'scripts/ui-snapshots.ps1').replace("'", "''")
+    output = str(tmp_path / 'screens').replace("'", "''")
+    python = sys.executable.replace("'", "''")
+    script = r'''
+$ErrorActionPreference = 'Stop'
+$env:OPSTRAIL_HOME = 'sentinel-home'
+$env:PYTHONPATH = 'sentinel-path'
+$env:OPSTRAIL_NO_CAPTURE = 'sentinel-capture'
+$global:shots = 0
+$global:stopped = $false
+$global:originalTestPath = Get-Command Test-Path -CommandType Cmdlet
+function Test-Path {
+    param([string]$LiteralPath)
+    if ($LiteralPath -like '*\msedge.exe') { return $true }
+    & $global:originalTestPath -LiteralPath $LiteralPath
+}
+function Invoke-WebRequest { return @{ StatusCode = 200 } }
+function Stop-Process { $global:stopped = $true }
+function Start-Process {
+    param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru,
+          $RedirectStandardOutput, $RedirectStandardError)
+    if ($WindowStyle -ne 'Hidden') { throw 'Visible helper' }
+    if ($ArgumentList -contains '--home') {
+        if ($env:OPSTRAIL_HOME -notlike '*ui-snapshots-*\home') { throw 'Home isolation lost' }
+        $index = [Array]::IndexOf($ArgumentList, '--ready')
+        $ready = $ArgumentList[$index + 1].Trim('"')
+        '{"date":"2026-10-19","session_id":7}' | Set-Content -LiteralPath $ready -Encoding ASCII
+        return [pscustomobject]@{ HasExited = $false; Id = 1234567 }
+    }
+    if (-not ($ArgumentList -contains '--headless')) { throw 'Missing headless' }
+    $shot = @($ArgumentList | Where-Object { $_ -like '--screenshot=*' })[0].Substring(13).Trim('"')
+    if ($shot -like '*-dark-*' -and -not ($ArgumentList -contains '--force-dark-mode')) { throw 'Missing dark flag' }
+    if (-not @($ArgumentList | Where-Object { $_ -like '--user-data-dir=*ui-snapshots-*' }).Count) { throw 'Real browser profile' }
+    [IO.File]::WriteAllBytes($shot, (New-Object byte[] 2048))
+    $global:shots++
+    $proc = [pscustomobject]@{}
+    $proc | Add-Member ScriptMethod WaitForExit { param($ms) return $true }
+    return $proc
+}
+'''
+    script += f"\n& '{launcher}' -Python '{python}' -OutputDirectory '{output}'\n"
+    script += r'''
+if ($global:shots -ne 16) { throw "Wrong matrix: $global:shots" }
+if (-not $global:stopped) { throw 'Server not stopped' }
+if ($env:OPSTRAIL_HOME -ne 'sentinel-home' -or $env:PYTHONPATH -ne 'sentinel-path' -or
+    $env:OPSTRAIL_NO_CAPTURE -ne 'sentinel-capture') { throw 'Environment not restored' }
+'''
+    result = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(list((tmp_path / 'screens').glob('*.png'))) == 16
+
+
 def test_voice_windows_hotkey_uses_popup(svc, monkeypatch):
     from opstrail.agent import daemon, hotkeys
     from opstrail.agent.hotkeys import win_combo

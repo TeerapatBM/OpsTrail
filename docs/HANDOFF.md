@@ -48,6 +48,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 ## Backlog (top = next) — detailed cards in docs/tasks/
 
+
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
@@ -81,6 +82,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter) and SharePoint publishing stay separate, not yet carded.
 
 ## Done
+
+- T-111 Web UI redesign — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Operations watch palette,
+  trail navigation/episodes, Thai-first responsive components, guarded/persistent auto/light/dark selectors.
+  Files: `web/static/{app.css,app.js,index.html,theme.js,mark.svg}`, `scripts/ui-snapshots.ps1`, `scripts/ui_snapshot_server.py`, `tests/test_web_theme.py`, `tests/web_theme.cjs`, `tests/test_windows.py`, `tests/web_editor_smoke.cjs`, design docs, README/SPEC/card. OPEN: Python gates and real PNG set/visual QA blocked here; see `docs/design/screens/README.md`.
 
 - T-110 team-mode design — Claude, 2026-10-20 [claimed: Claude 2026-10-20]. `docs/team-mode.md`: API-only Hub
   (Starlette + SQLite), Entra SSO + app roles, push of previewed work entries/final docs only, lead approval,
@@ -138,6 +143,10 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude Code: review T-111 for functionality, accessibility/Thai layout, escaping and CSP regressions.
+  Run pytest/eval and `scripts/ui-snapshots.ps1` with shared venv; inspect/commit the 16 real PNGs.
+  Node theme/contrast tests and mocked PowerShell capture matrix pass; real Python/browser capture could not run here.
+
 - [ ] GPT (Codex): review T-110 `docs/team-mode.md` as a design (comments in the PR): SQLite-instead-of-Postgres
   (§3), token validation rules (§4), publish projection + "no MCP submit" (§6), state machine (§7), man-day formula
   (§9), PDPA legal-basis/retention proposal (§10), threat model gaps (§11), card split/order (§13). Also check the
@@ -174,6 +183,24 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-111 (GPT): use Operations watch (ink-blue + teal), a three-node trail mark and episode
+  rail, a joined summary strip and quiet bordered surfaces. Thai-first Leelawadee UI/Noto Sans Thai/Tahoma,
+  generous line height, fixed streaming panes, mobile tabs/labelled table rows, visible focus/reduced motion.
+  Shared control tokens pass measured AA text contrast and 3:1 boundaries in both themes; no new dependencies.
+- 2026-10-20 — T-111 (GPT): execute the card/design plan inline under unattended authorization; runner
+  supplies Claude review, no approval pauses/extra agents/commits. External pre-CSS theme.js stores only
+  auto/light/dark in guarded localStorage, follows OS changes in auto, synchronizes Settings/sidebar/tabs.
+  SVG navigation is local; input names, skip link and aria-current improve keyboard/screen-reader navigation.
+  All existing IDs, render escaping, APIs and production LocalOnly remain intact.
+- 2026-10-20 — T-111 (GPT): snapshot helper requires a new home, explicitly fixes repo templates/export path,
+  seeds golden-day inbox through normal redaction/ingest, creates deterministic worklogs/two SOP versions;
+  no provider calls. Development-only external theme bootstrap under real LocalOnly makes both themes
+  deterministic regardless of desktop OS preference. Isolated hidden browser processes, Edge then Chrome,
+  16 captures, timeout/fail with logs, restore inherited environment; retain synthetic run files in .tmp.
+  Mocked Windows launcher test exposed PS array-expression grouping; explicit parentheses fixed it and
+  the 16-request matrix now passes. Shared Python cannot start (system access error), optional Playwright
+  is absent, headless native probes produced no PNG. Real screenshots/gates remain OPEN; no mock PNGs committed.
 
 - 2026-10-20 — T-110 (Claude): team mode = a separate API-only **Hub** in this repo (`src/opstrail/hub/`), no hub web
   frontend: leads also use their local web UI, which calls the Hub from Python (browser never talks to the Hub, so
