@@ -16,6 +16,18 @@
                  เอกสาร .docx / .md
 ```
 
+## System tray (Windows)
+
+เมื่อติดตั้ง extra `agent` จะมี `pystray` และ `Pillow` สำหรับไอคอน OpsTrail ข้างนาฬิกา
+สีเขียว = กำลังบันทึก สีเทา = หยุดบันทึกชั่วคราว (อัปเดตเมื่อ pause ผ่าน hotkey/CLI/หน้าเว็บด้วย)
+คลิกขวาเพื่อ **เปิดหน้าเว็บ**, **หยุดบันทึก/บันทึกต่อ**, เพิ่ม **โน้ต**, **ถ่ายรูป**,
+เปิด **Daily worklog วันนี้** หรือ **ออก** เพื่อหยุด agent ไอคอนอาจอยู่ในเมนูไอคอนที่ซ่อนอยู่ของ Windows
+
+Daily worklog จะเปิดฉบับเดิมโดยเก็บข้อความที่แก้ไว้ หรือสร้างฉบับแรกถ้ายังไม่มี
+ถ้าปิดหน้าเว็บใน config จะใช้ popup review แทน หากยังไม่ได้ติดตั้ง extra หรือไม่มี desktop ที่รองรับ
+agent ยังบันทึกตามปกติและใช้ hotkey/CLI ได้ ไอคอนแบบ background นี้ไม่เปิดบน macOS
+ติดตั้งหรืออัปเดต extra ด้วย `python -m pip install -e ".[agent]"` แล้วรัน `opstrail restart`
+
 ## ติดตั้ง (Windows)
 
 1. ต้องมี Python 3.10+ (`winget install -e --id Python.Python.3.12`)
@@ -51,6 +63,7 @@ hook จะเปิด `Start-Transcript` ของแต่ละหน้า�
 - ไฟล์ transcript มีผลลัพธ์ดิบ (ยังไม่ redact) — ถูกลบเมื่อพิมพ์ `exit`; ถ้าปิดหน้าต่างด้วย X จะถูกลบตอนเปิด PowerShell ครั้งถัดไป (ไฟล์เก่ากว่า 12 ชม.)
 - รองรับเฉพาะ PowerShell (bash/zsh ยังไม่เก็บผลลัพธ์) · ถ้าสั่ง `Stop-Transcript` เองจะหยุดของ OpsTrail ด้วย (คำสั่งยังถูกบันทึกตามปกติ)
 - ตอน pause hook จะหยุดและลบไฟล์ transcript ที่ prompt ถัดไป (หน้าต่างที่เปิดตอน pause อยู่จะไม่เริ่ม transcript) แล้วเริ่มไฟล์ใหม่หลัง resume — คำสั่งแรกหลัง resume จะยังไม่มีผลลัพธ์
+- รองรับ header ของ transcript ทั้งแบบมีและไม่มี UTF-8 BOM ใน Windows PowerShell 5.1 รวมถึงไฟล์ที่เริ่มใหม่หลัง resume
 
 ตอน 18:00 (ตั้งได้) จะสร้าง Daily worklog ให้ และเปิดหน้าเว็บให้ทบทวนชื่องาน + เติมโน้ต
 

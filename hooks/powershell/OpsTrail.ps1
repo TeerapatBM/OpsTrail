@@ -114,8 +114,9 @@ function global:Read-OpsTrailTranscript {
             }
             $text = [System.Text.Encoding]::UTF8.GetString($buf, 0, $read)
             if ($skipHeader) {
-                # header = text between the first two "*****" lines; without both, drop everything
-                $m = [regex]::Match($text, '^\*{10,}[ \t]*\r?\n[\s\S]*?^\*{10,}[ \t]*(\r?\n|$)', 'Multiline')
+                # PS 5.1 writes a UTF-8 BOM; GetString preserves it, unlike StreamReader.
+                # Header = text between the first two "*****" lines; without both, drop everything.
+                $m = [regex]::Match($text, '^\uFEFF?\*{10,}[ \t]*\r?\n[\s\S]*?^\*{10,}[ \t]*(\r?\n|$)', 'Multiline')
                 if (-not $m.Success) { return $null }
                 $text = $text.Substring($m.Index + $m.Length)
             }

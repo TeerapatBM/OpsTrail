@@ -16,6 +16,47 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 REPO = Path(__file__).resolve().parents[1]
 
 
+def test_tray_windows_thread_and_status_images(svc, monkeypatch):
+    """Exercise Windows thread lifecycle + real Pillow images without a desktop."""
+    import threading
+    from types import SimpleNamespace
+    pytest.importorskip("PIL.Image")
+    from opstrail.agent.daemon import Agent
+    from opstrail.agent.tray import Tray
+
+    ready, stopped = threading.Event(), threading.Event()
+
+    class Icon:
+        def __init__(self, name, image, title, menu):
+            self.icon = image
+
+        def run(self, setup):
+            setup(self)
+            ready.set()
+            stopped.wait(3)
+
+        def stop(self):
+            stopped.set()
+
+        def update_menu(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "pystray", SimpleNamespace(
+        Icon=Icon, Menu=lambda *items: items, MenuItem=lambda *args: args,
+    ))
+    tray = Tray(Agent(svc))
+    tray.start()
+    try:
+        assert ready.wait(2)
+        assert tray.icon.icon.getpixel((32, 32)) == (34, 197, 94, 255)
+        svc.cfg.set_paused(True)
+        tray.poll()
+        assert tray.icon.icon.getpixel((32, 32)) == (128, 128, 128, 255)
+    finally:
+        tray.stop()
+    assert not tray.thread.is_alive()
+
+
 def test_dpapi_roundtrip():
     from opstrail.secretstore import protect, unprotect
 
@@ -255,3 +296,33 @@ Run 'cmd-g' 7
     finally:
         svc.store.close()
     assert list((cfg.home / "transcripts").glob("*.txt")) == []
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_lazy_transcript_header(cfg):
+    """A lazily created transcript may begin with a UTF-8 BOM, including after resume."""
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    script = f"""
+$ErrorActionPreference = 'Stop'
+. '{hook}'
+$file = Join-Path $global:OpsTrailHome 'lazy-transcript.txt'
+try {{
+    foreach ($bom in @($false, $true)) {{
+        $text = "**********************`r`nWindows PowerShell transcript start`r`n**********************`r`nvisible output`r`n"
+        [IO.File]::WriteAllText($file, $text, (New-Object Text.UTF8Encoding($bom)))
+        $global:OpsTrailTranscript = $file
+        $global:OpsTrailTranscriptPos = -1
+        $output = Read-OpsTrailTranscript
+        if ($output -ne "visible output`r`n") {{ throw "lost lazy transcript output (BOM=$bom)" }}
+        if (Read-OpsTrailTranscript) {{ throw 'output read twice' }}
+    }}
+}} finally {{
+    $global:OpsTrailTranscript = $null
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+}}
+"""
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env={**os.environ, "OPSTRAIL_HOME": str(cfg.home)}, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
