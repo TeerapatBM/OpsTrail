@@ -846,9 +846,19 @@ async function renderSettings() {
   try { [s, st] = await Promise.all([api("/api/llm"), api("/api/status")]); } catch (e) { return setView(esc(e.message)); }
   let prof = {};
   try { prof = await api("/api/profile"); } catch { prof = {}; }
+  let recapSettings = {};
+  try { recapSettings = await api("/api/recap/settings"); } catch { recapSettings = {}; }
   const tplList = await templates();
   const v = setView(`
     <div class="page-head"><h1>ตั้งค่า</h1></div>
+    <div class="card pad stack" style="margin-bottom:14px">
+      <h2>สรุปงานประจำวันไป Teams</h2>
+      <div class="muted small">เปิดใช้แล้วจะส่ง digest อัตโนมัติตอนสร้าง recap รวมถึง recap ย้อนหลังของเมื่อวาน ส่งเฉพาะชื่องานและเวลา ชื่ออัตโนมัติและหัวข้อประชุมจะใช้เลขงานแทนเพื่อป้องกันข้อมูลจาก command/window title</div>
+      <label class="field">Power Automate Workflows Webhook URL<input id="teams-webhook" type="password" autocomplete="off" placeholder="${recapSettings.has_webhook ? 'เก็บไว้แล้ว — เว้นว่างเพื่อใช้ค่าเดิม' : 'ยังไม่เปิดใช้ — วาง HTTPS Webhook URL'}"></label>
+      <div class="muted small">เก็บด้วย Windows DPAPI เช่นเดียวกับ API key; ลบ Webhook เพื่อปิดการส่ง</div>
+      <div class="row"><button class="btn primary" id="teams-save">บันทึก Webhook</button>
+        <button class="btn danger" id="teams-clear">ลบ Webhook / ปิดการส่ง</button></div>
+    </div>
     <div class="card pad stack" style="margin-bottom:14px">
       <h2>ผู้จัดทำเอกสาร</h2>
       <div class="grid2">
@@ -913,6 +923,18 @@ async function renderSettings() {
     try { prof = await api("/api/profile", { body: { author: $("#p-author", v).value, team: $("#p-team", v).value } }); toast(`บันทึกแล้ว — เอกสารจะใช้ชื่อ “${prof.effective_author}”`); }
     catch (e) { fail(e); }
   });
+  const saveTeams = async (clear) => {
+    const input = $("#teams-webhook", v);
+    try {
+      const result = await api("/api/recap/settings", { body: clear
+        ? { clear_webhook: true } : { teams_webhook_url: input.value.trim() } });
+      input.value = "";
+      input.placeholder = result.has_webhook ? "เก็บไว้แล้ว — เว้นว่างเพื่อใช้ค่าเดิม" : "ยังไม่เปิดใช้ — วาง HTTPS Webhook URL";
+      toast(result.has_webhook ? "เปิดการส่ง Teams digest แล้ว" : "ปิดการส่ง Teams digest แล้ว");
+    } catch (e) { fail(e); }
+  };
+  $("#teams-save", v).addEventListener("click", () => saveTeams(false));
+  $("#teams-clear", v).addEventListener("click", () => saveTeams(true));
   const loadStyle = async () => {
     try {
       const st = await api(`/api/style/${encodeURIComponent($("#st-tpl", v).value)}`);

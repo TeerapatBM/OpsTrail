@@ -51,7 +51,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - T-101 browser extension (GPT) · T-103 voice note (GPT)
-- T-105 Teams digest (GPT) · ~~T-106 PowerShell output capture (Claude)~~ done
+- ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
 
@@ -63,8 +63,7 @@ Older backlog items (kept for reference):
    _owner: Bro + any agent_
 2. [ ] **Import the team's real document formats** (Bro will provide a folder): put good examples into
    `templates/<type>/examples/`, company Word template as `reference.docx`, adapt `skeleton.md` / `guide.md`.
-3. [ ] **Teams digest** at recap time: optional `[recap] teams_webhook_url` (Power Automate Workflows webhook),
-   post a short Adaptive Card with today's work items + link to the doc. _suggested: GPT_
+3. [x] **Teams digest** at recap time (T-105): optional protected Workflows webhook, title/time-only Adaptive Card.
 4. [x] (T-106) **PowerShell output capture** (opt-in): `Start-Transcript` per session, attach the first N lines of output
    to each shell event for "expected result" sections in SOPs. _suggested: Claude_
 5. [ ] **Tray icon** (pystray): status, pause/resume, open today's recap, open exports folder. _suggested: GPT_
@@ -81,6 +80,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
 
 ## Done
+
+- T-105 Teams digest — GPT, 2026-10-20. Opt-in protected Settings webhook, title/time-only Adaptive Card 1.4,
+  daemon-thread POST with one retry and safe logs; automatic recap gate includes yesterday's catch-up.
+  Files: `teams.py`, `service.py`, `config.py`, `agent/daemon.py`, `web/app.py`, `web/static/app.js`, `tests/test_teams.py`, `tests/test_windows.py`, SPEC/README/card/plan. Python gates blocked by sandbox launcher; runner + tenant smoke pending.
 
 - T-106 PowerShell output capture (opt-in) — Claude, 2026-10-20. `[capture] shell_output` → hook runs `Start-Transcript`
   per session, slices it in `prompt` into `data.output` (first `shell_output_lines`); ingest redacts, drops it unless
@@ -108,6 +111,9 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-105 secret persistence/API, capture-derived title suppression and background
+  delivery/retry; run pytest + eval (shared Python cannot start in Codex sandbox), then synthetic Teams tenant smoke.
+
 - [ ] GPT (Codex): review T-106 — transcript slicing in `hooks/powershell/OpsTrail.ps1` (`Read-OpsTrailTranscript`,
   `Format-OpsTrailOutput`: echo-line stripping, offset handling, cleanup), `events._shell_output`, the two redaction
   pattern changes in `redact.py` (env-style `*_PASSWORD=`, truncated PEM) and `render.command_lines(with_output=)`.
@@ -119,6 +125,22 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-105 (GPT): actual webhook only in `recap.json` via existing secretstore (DPAPI on Windows;
+  same base64/0600 fallback elsewhere). TOML key is empty/ignored; GET/POST return only `has_webhook`.
+  Empty Settings input preserves the secret; explicit clear disables it. Atomic file replacement protects concurrent reads.
+- 2026-10-20 — T-105 (GPT): episode auto titles and meeting subjects derive from captured strings, so use generic
+  numbered labels until explicitly renamed; drop locked titles repeating captured commands/window titles/subjects,
+  then re-redact and strip Markdown syntax. Reuse recap SOP/Delivery thresholds, at most 15 items/section and 100 chars/title.
+  No document link: card contract restricts outbound data to titles/times; local-only URLs are not useful to channel members.
+  GPT static review found a whitespace bypass: comparison now normalizes whitespace/case across the entire day's capture.
+  Locked titles include manual and AI-renamed titles; all heuristic titles remain generic. Regression test added;
+  static reviewer approved, runtime verification is still pending the runner.
+- 2026-10-20 — T-105 (GPT): automatic recap gate alone dispatches Teams (including yesterday catch-up/revision);
+  manual recap does not send. Snapshot before daemon thread avoids cross-thread SQLite; 10s timeout per attempt,
+  one immediate retry, no redirects or durable retry queue. A timeout can duplicate a card; shutdown may interrupt it.
+  HTTPS required except loopback fake servers. T-105 explicitly authorizes this opt-in outbound integration beyond
+  the prior LLM-only privacy rule; LocalOnly is unchanged. Tenant webhooks requiring OAuth are outside this card.
 
 - 2026-10-20 — T-106 (Claude): the hook reads `[capture] shell_output(_lines)` from config.toml with a tiny line-based
   TOML reader when the shell starts (no Python call per shell → no startup cost); changes need a new PowerShell window.

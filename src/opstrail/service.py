@@ -489,6 +489,57 @@ class OpsTrail:
         return {"session_id": s["id"], "version": v["version"], "files": files}
 
     # ------------------------------------------------------------ daily recap
+    def recap_settings(self) -> dict[str, bool]:
+        from opstrail import teams
+
+        return teams.public_settings(self.cfg)
+
+    def save_recap_settings(self, teams_webhook_url: str | None = None, clear: bool = False) -> dict[str, bool]:
+        from opstrail import teams
+
+        try:
+            if teams_webhook_url is not None and not isinstance(teams_webhook_url, str):
+                raise ValueError("Webhook URL ต้องเป็นข้อความ")
+            return teams.save_settings(self.cfg, teams_webhook_url, clear)
+        except ValueError:
+            raise OpsTrailError("Webhook URL ไม่ถูกต้อง: ใช้ HTTPS หรือ HTTP loopback สำหรับทดสอบ") from None
+        except Exception:
+            raise OpsTrailError("บันทึก Teams Webhook ไม่สำเร็จ กรุณาตรวจสิทธิ์ไฟล์และ Windows DPAPI") from None
+
+    def send_teams_digest(self, date: str):
+        """Called only by the automatic recap gate, with no DB use in the worker."""
+        import logging
+        import threading
+        from opstrail import teams
+
+        try:
+            url = teams.webhook_url(self.cfg)
+            if not url:
+                return None
+            day = _validate_date(date, self.cfg)
+            episodes = self.store.episodes_between(day)
+            # Explicit titles can also repeat captured commands/window titles.
+            # Compare the entire day, including normalized whitespace, before projection.
+            captured = []
+            for ev in self.store.events_for_date(day):
+                data = ev.get("data") or {}
+                values = [data.get("cmd")] if ev["type"] in ("shell", "ai") else []
+                if ev["type"] in ("window", "screenshot"):
+                    values.extend([data.get("title"), ev.get("subject")])
+                captured.extend(" ".join(str(v).split()).casefold() for v in values if v and str(v).strip())
+            for ep in episodes:
+                if ep.get("title_locked"):
+                    title = " ".join(str(ep["title"]).split()).casefold()
+                    if any(value in title for value in captured):
+                        ep["title_locked"] = False
+            payload = teams.build_card(self.cfg, day, episodes)
+            worker = threading.Thread(target=teams.deliver, args=(url, payload), name="opstrail-teams", daemon=True)
+            worker.start()
+            return worker
+        except Exception:
+            logging.getLogger("opstrail.teams").warning("Teams: เตรียม digest ไม่สำเร็จ")
+            return None
+
     def recap_session_id(self, date: str) -> int | None:
         value = self.store.kv_get(f"recap:{date}")
         if value and value.isdigit() and self.store.get_session(int(value)):

@@ -60,6 +60,7 @@ idle_split_min = 25    # เว้นช่วงนานเกินนี้ 
 min_run_min = 5        # เปลี่ยน project ต่อเนื่องอย่างน้อยกี่นาทีถึงจะแยกงาน
 
 [recap]
+teams_webhook_url = "" # ตั้งค่าผ่าน Settings เท่านั้น; URL จริงเก็บแบบเข้ารหัสใน recap.json
 auto = true            # สร้าง daily worklog อัตโนมัติ
 time = "18:00"         # เวลาที่สร้าง
 review_popup = true    # เปิดหน้าต่างให้ทบทวน/ใส่โน้ตแต่ละงานตอนสร้าง recap

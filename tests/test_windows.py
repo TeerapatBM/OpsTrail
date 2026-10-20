@@ -24,6 +24,18 @@ def test_dpapi_roundtrip():
     assert unprotect(token) == "sk-ant-test-123"
 
 
+def test_teams_webhook_dpapi_storage(cfg, svc):
+    import json
+    from opstrail import teams
+
+    url = "https://example.com/workflows/test?sig=synthetic-secret"
+    assert svc.save_recap_settings(url) == {"has_webhook": True}
+    data = json.loads((cfg.home / "recap.json").read_text(encoding="utf-8"))
+    assert data["teams_webhook_url"].startswith("dpapi:")
+    assert url not in json.dumps(data)
+    assert teams.webhook_url(cfg) == url
+
+
 def test_winapi_calls_do_not_crash():
     from opstrail.agent import winapi
 
