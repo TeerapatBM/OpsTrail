@@ -260,6 +260,7 @@ class Agent:
             count = sum(store.count_events(day).values())
             store.kv_set(f"recap_done:{day}", f"{res.get('session_id', '')}:{count}")
             log.info("daily recap created for %s (session %s)", day, res.get("session_id"))
+            self.svc.send_teams_digest(day)
             if popup:
                 self.open_review(day)
         except Exception:

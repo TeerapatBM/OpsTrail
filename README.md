@@ -54,6 +54,22 @@ hook จะเปิด `Start-Transcript` ของแต่ละหน้า�
 
 ตอน 18:00 (ตั้งได้) จะสร้าง Daily worklog ให้ และเปิดหน้าเว็บให้ทบทวนชื่องาน + เติมโน้ต
 
+**ส่ง digest ไป Teams (เลือกเปิดเอง)** — ใน Teams channel สร้าง Power Automate **Workflows**
+แบบรับ Webhook แล้วโพสต์ Adaptive Card โดยเลือกการรับ request แบบที่ใช้ URL ได้โดยไม่ต้อง OAuth
+([คู่มือ Microsoft](https://learn.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/connectors-using))
+คัดลอก HTTPS URL ไปที่หน้า **ตั้งค่า → สรุปงานประจำวันไป Teams → บันทึก Webhook**
+URL เก็บใน `~/.opstrail/recap.json` ด้วย Windows DPAPI เหมือน API key; ระบบอื่นใช้ base64 ในไฟล์สิทธิ์ 600
+อย่าใส่ URL จริงใน `config.toml` — `[recap] teams_webhook_url = ""` เป็นเพียงค่าเริ่มต้นว่างและไม่อ่าน URL จาก TOML
+เว้นช่องว่างเมื่อบันทึกเพื่อใช้ค่าเดิม หรือกด **ลบ Webhook / ปิดการส่ง** เพื่อปิด
+
+ตอน agent สร้าง recap อัตโนมัติจะส่งการ์ดสั้นๆ มีชื่องาน/เวลา ประชุม และงานที่ควรทำ SOP/Delivery doc
+รวมถึง recap ย้อนหลังของเมื่อวานเมื่อเปิดเครื่องใหม่; กดสร้าง recap เองในเว็บ/CLI/MCP จะไม่ส่งซ้ำ
+ชื่ออัตโนมัติและหัวข้อประชุมใช้ `งาน #id` / `ประชุม #id` แทน เพราะอาจมาจาก command/window title
+เปลี่ยนชื่องานเองหรือให้ AI ตั้งชื่อเพื่อให้ digest อ่านง่าย (ชื่อที่ซ้ำกับ command/window title จะถูกแทนด้วยเลขงานเช่นกัน)
+ไม่ส่ง command, window title, output, notes, screenshots หรือเนื้อหาเอกสาร; สูงสุด 15 รายการต่อหมวด
+ส่งใน background มี timeout 10 วินาทีต่อครั้งและ retry อีกหนึ่งครั้ง ไม่ขวาง agent; ล้มเหลวบันทึกเฉพาะข้อความทั่วไป
+ใน `logs/agent.log` โดยไม่แสดง URL หากปิด agent ระหว่างส่งอาจไม่ได้รับการ์ด และ timeout อาจทำให้การ์ดซ้ำได้
+
 **ประชุม** (Teams / Zoom / Google Meet) ถูกแยกเป็นงานของตัวเองพร้อมเวลาเป๊ะ — พอประชุมจบ (≥10 นาที) จะมีหน้าต่าง
 ให้สรุปสั้นๆ: ประเด็น / การตัดสินใจ / action items แล้วใช้ template **บันทึกการประชุม** ทำเอกสารได้ทันที
 (ระบบไม่อัดเสียงหรือดึง transcript — จนกว่าจะเปิดใช้ M365 connector)

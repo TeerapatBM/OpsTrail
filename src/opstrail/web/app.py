@@ -259,6 +259,12 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         return ot.list_recaps(_int(q(r, "limit"), 90))
 
     # --- AI settings
+    def recap_settings(r: Request, b: dict) -> Any:
+        return ot.recap_settings()
+
+    def recap_settings_save(r: Request, b: dict) -> Any:
+        return ot.save_recap_settings(b.get("teams_webhook_url"), clear=b.get("clear_webhook") is True)
+
     def llm_get(r: Request, b: dict) -> Any:
         return llm.public_settings(ot.cfg)
 
@@ -327,6 +333,8 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         Route("/api/docs/{id:int}/sources", api(doc_sources, body=True), methods=["POST"]),
         Route("/api/docs/{id:int}/download", api(doc_download)),
         Route("/api/recaps", api(recaps)),
+        Route("/api/recap/settings", api(recap_settings)),
+        Route("/api/recap/settings", api(recap_settings_save, body=True), methods=["POST"]),
         Route("/api/search", api(search)),
         Route("/api/llm", api(llm_get)),
         Route("/api/llm", api(llm_save, body=True), methods=["POST"]),

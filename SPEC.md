@@ -73,6 +73,7 @@ both ingest safely. Duplicate inserts are blocked by a content hash.
                              raw output, deleted on pause / shell exit / after 12 h by the next shell start)
   logs/agent.log
   llm.json                   web UI AI settings; API key DPAPI-encrypted on Windows
+  recap.json                 Teams webhook secret (DPAPI on Windows, base64/0600 elsewhere)
   refresh.lock               cross-process lock for ingest + grouping
   paused                     flag file – when present nothing is captured
 ~/Documents/OpsTrail/        exports (config: general.export_dir)
@@ -201,6 +202,28 @@ Incremental grouping (`opstrail.episodes.assign_episodes`), run on every refresh
 * **Daily recap**: at `recap.time` (default 18:00) the agent builds a deterministic
   daily worklog (session with template `daily-worklog`, author `opstrail-auto`). An AI
   can later polish it with `daily_recap` + `save_draft`.
+* **Teams digest (opt-in)**: `[recap] teams_webhook_url = ""` is an empty placeholder only;
+  nonempty TOML values are ignored. Configure the actual secret in web Settings, stored only in
+  `recap.json` via `secretstore` (same protection as LLM keys). Empty input keeps the current secret;
+  explicit removal disables delivery. Invalid/unreadable secrets disable delivery with a safe log.
+  When the agent creates an automatic recap (including yesterday's catch-up/revision), its existing
+  `recap_done:<date>` gate dispatches one daemon thread. Manual CLI/MCP/web recaps do not send.
+  The worker receives only URL + projected payload, never uses SQLite, POSTs with a 10-second timeout
+  and retries once immediately on failure (including non-2xx). No redirects; failure logs contain
+  neither URL, response body nor exception text. No durable retry queue; shutdown may interrupt delivery,
+  and an ambiguous timeout can duplicate a delivered card. Failed sends do not undo the local recap.
+  Payload: `{type: "message", attachments: [{contentType: "application/vnd.microsoft.card.adaptive",
+  contentUrl: null, content: {type: "AdaptiveCard", version: "1.4", body: [...]}}]}`.
+  Sections: work items, meetings, doc candidates (same SOP/Delivery thresholds as the worklog).
+  Only titles and local start/end times leave the machine, at most 15 entries per section and 100
+  characters per title, with an omitted-item count. Heuristic titles and meeting subjects come from
+  capture, so they become `งาน #id` / `ประชุม #id`; locked titles (manual or AI-renamed) are redacted again,
+  with Markdown syntax removed. A locked title repeating a captured command/window title/subject
+  anywhere in that day's capture (case-insensitive, normalized whitespace) is replaced by the generic label too.
+  No commands, window titles, notes, output, screenshots,
+  source packs, author identity or document bodies are posted. HTTPS required; HTTP allowed only
+  for loopback tests. Webhook URL authorizes the Workflows request; tenant-authenticated webhooks
+  requiring OAuth are not supported.
 
 ## 7. MCP interface
 
@@ -262,6 +285,9 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
   `docs/{id}` (+`/meta`, `/save`, `/generate`, `/diff`, `/prompt`, `/sources`, `/download`), `recaps`, `search`,
   `llm` (GET/POST), `llm/test`, `profile` (GET/POST), `docs/{id}/factcheck`, `day/{date}/ai-titles`,
   `style/{template}` (GET/POST), `style/{template}/learn`.
+* `recap/settings` (GET/POST): GET returns only `{has_webhook: bool}`. POST accepts
+  `{teams_webhook_url?: str, clear_webhook?: bool}` (clear wins); same safe response, never the URL
+  or protected token. Normal LocalOnly/CSRF protection applies. Validation/storage failures are safe JSON 400.
 * AI generation (`OpsTrail.generate_draft`): system + user prompt = source pack (mode "api") + current draft
   (for revisions) + optional user instruction → provider in `opstrail.llm` → new version (author = provider:model).
   Copy prompt / Paste result offers the same flow without an API key.
@@ -304,6 +330,8 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
 * `refresh()` (ingest + grouping) runs under a cross-process file lock (`~/.opstrail/refresh.lock`).
 * `opstrail purge` deletes raw events by date.
 * HTTP transport binds to 127.0.0.1 by default; set a token before exposing it.
+* The opt-in Teams Workflows webhook is an additional outbound destination at automatic recap time;
+  see §6 for its restricted projection and secret handling. Off by default; no telemetry or new dependency.
 
 ## 9. Roadmap
 
