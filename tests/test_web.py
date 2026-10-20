@@ -121,6 +121,56 @@ def test_generate_without_provider_gives_clear_error(client, svc, sample_day):
 class FakeLLM(BaseHTTPRequestHandler):
     calls: list[dict] = []
     reply: str | None = None  # override the text returned by /v1/messages
+    stream_mode = "ok"
+    stream_gate = None
+    stream_finished = None
+
+    def _stream(self, body):
+        if self.stream_mode == "http-error":
+            return self._send({"error": {"message": "secret-provider-response"}}, 401)
+        if self.stream_mode == "json-response":
+            return self._send({"choices": []})
+        self.send_response(200)
+        self.send_header("content-type", "text/event-stream")
+        self.end_headers()
+        anthropic = self.path.startswith("/v1/messages")
+        def send(obj):
+            data = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False)
+            try:
+                self.wfile.write((": ping\r\ndata: " + data + "\r\n\r\n").encode("utf-8"))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # The client deliberately closes rejected streams early.
+        if anthropic:
+            send({"type": "message_start", "message": {"model": body["model"]}})
+        for text in ([] if self.stream_mode == "empty" else ["# ไทย\n", "\nพร้อมแล้ว"]):
+            send({"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}} if anthropic
+                 else {"choices": [{"delta": {"content": text}, "finish_reason": None}]})
+            if self.stream_gate is not None:
+                self.stream_gate.wait(timeout=3)
+        if self.stream_mode == "error":
+            send({"type": "error", "error": {"message": "provider failed"}})
+            return
+        if self.stream_mode == "malformed":
+            send("not-json")
+            return
+        if self.stream_mode == "disconnect":
+            return
+        reason = "max_tokens" if anthropic else "length"
+        stop = reason if self.stream_mode == "length" else "end_turn" if anthropic else "stop"
+        if self.stream_mode == "filtered":
+            stop = "refusal" if anthropic else "content_filter"
+        elif self.stream_mode == "unknown-reason":
+            stop = "unknown-reason"
+        if anthropic:
+            send({"type": "message_delta", "delta": {"stop_reason": stop}})
+            if self.stream_mode != "no-terminal":
+                send({"type": "message_stop"})
+        else:
+            send({"choices": [{"delta": {}, "finish_reason": stop}]})
+            if self.stream_mode != "no-terminal":
+                send("[DONE]")
+        self.stream_finished.set()
 
     def log_message(self, *args):  # silence
         pass
@@ -143,6 +193,8 @@ class FakeLLM(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         FakeLLM.calls.append({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body})
+        if body.get("stream"):
+            return self._stream(body)
         if self.path.startswith("/v1/messages"):
             if self.headers.get("x-api-key") == "sk-org" and not self.headers.get("anthropic-workspace-id"):
                 return self._send({"type": "error", "error": {"type": "invalid_request_error", "message":
@@ -168,6 +220,9 @@ def fake_llm(monkeypatch):
     t.start()
     FakeLLM.calls = []
     FakeLLM.reply = None
+    FakeLLM.stream_mode = "ok"
+    FakeLLM.stream_gate = None
+    FakeLLM.stream_finished = threading.Event()
     yield f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
 
@@ -261,3 +316,87 @@ def test_stop_when_agent_not_running(home, capsys):
 
     assert main(["stop"]) == 0
     assert "not running" in capsys.readouterr().out
+
+
+def test_version_diff(client, svc, sample_day):
+    sid = svc.start_doc_session("sop", "diff", date=DAY)["session_id"]
+    before, after = "# คู่มือ\nติดตั้งระบบเก่า port 80\n", "# คู่มือ\nติดตั้งระบบใหม่ port 443\n<script>"
+    svc.save_draft(sid, before)
+    svc.save_draft(sid, after)
+    r = client.get(f"/api/docs/{sid}/diff?from=1&to=2")
+    assert r.status_code == 200
+    hunks = r.json()["hunks"]
+    assert "".join(h["before"] for h in hunks) == before
+    assert "".join(h["after"] for h in hunks) == after
+    assert any(h["op"] == "equal" and "ติดตั้งระบบ" in h["before"] for h in hunks)
+    assert any(h["op"] != "equal" and "443" in h["after"] for h in hunks)
+    same = client.get(f"/api/docs/{sid}/diff?from=1&to=1").json()["hunks"]
+    assert all(h["op"] == "equal" for h in same)
+    reverse = client.get(f"/api/docs/{sid}/diff?from=2&to=1").json()["hunks"]
+    assert "".join(h["before"] for h in reverse) == after
+    for query in ("from=0&to=2", "from=1&to=99", "from=x&to=2", "to=2"):
+        assert client.get(f"/api/docs/{sid}/diff?{query}").status_code == 400
+    assert client.get("/api/docs/99999/diff?from=1&to=2").status_code == 400
+
+
+def sse_events(response):
+    return [json.loads(block.split("data: ", 1)[1]) for block in response.text.split("\n\n") if "data: " in block]
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "azure"])
+@pytest.mark.parametrize("mode", ["ok", "length", "filtered", "unknown-reason", "error", "http-error", "json-response", "disconnect", "no-terminal", "malformed", "empty"])
+def test_generate_stream(client, svc, cfg, sample_day, fake_llm, provider, mode):
+    llm.save_settings(cfg, {"provider": provider, "base_url": fake_llm, "model": "test-model",
+                           "azure_endpoint": fake_llm, "azure_deployment": "test-dep"}, api_key="sk-test")
+    FakeLLM.stream_mode = mode
+    sid = svc.start_doc_session("sop", "stream", date=DAY)["session_id"]
+    svc.save_draft(sid, "original")
+    r = client.post(f"/api/docs/{sid}/generate?stream=1", json={"instruction": "สั้นๆ"}, headers=H)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    assert "script-src 'self'" in r.headers["content-security-policy"]
+    events = sse_events(r)
+    assert FakeLLM.calls[-1]["body"]["stream"] is True
+    if mode in ("ok", "length"):
+        assert [e["event"] for e in events] == ["delta", "delta", "done"]
+        done = events[-1]
+        assert done["version"] == 2 and done["fact_check"]["version"] == 2
+        assert done["truncated"] == (mode == "length")
+        assert done["markdown"] == "# ไทย\n\nพร้อมแล้ว\n"
+        assert svc.doc_detail(sid)["markdown"] == done["markdown"]
+    else:
+        assert events[-1]["event"] == "error"
+        assert "secret-provider-response" not in r.text
+        assert not any(e["event"] == "done" for e in events)
+        assert svc.doc_detail(sid)["version"] == 1
+        assert svc.doc_detail(sid)["markdown"] == "original"
+
+
+def test_stream_security_and_invalid_doc(client):
+    assert client.post("/api/docs/99999/generate?stream=1", json={}).status_code == 403
+    assert client.post("/api/docs/99999/generate?stream=1", json={}, headers=H).status_code == 400
+
+
+def test_stream_without_provider_is_safe_error_event(client, svc):
+    sid = svc.start_doc_session("sop", "no provider", date=DAY)["session_id"]
+    r = client.post(f"/api/docs/{sid}/generate?stream=1", json={}, headers=H)
+    assert r.status_code == 200
+    assert [e["event"] for e in sse_events(r)] == ["error"]
+    assert svc.doc_detail(sid)["version"] == 0
+
+
+@pytest.mark.parametrize("provider", ["anthropic", "openai"])
+def test_provider_yields_before_generation_finishes(cfg, fake_llm, provider):
+    llm.save_settings(cfg, {"provider": provider, "base_url": fake_llm}, api_key="sk-test")
+    gate = FakeLLM.stream_gate = threading.Event()
+    chunks = llm.stream_complete(cfg, "system", "user")
+    try:
+        assert next(chunks) == "# ไทย\n"
+        # The fake provider is still waiting to send the rest, so this is a real stream.
+        assert not FakeLLM.stream_finished.is_set()
+        gate.set()
+        rest = list(chunks)
+        assert rest[0] == "\nพร้อมแล้ว"
+        assert isinstance(rest[-1], llm.LLMResult)
+    finally:
+        gate.set()
+        chunks.close()
