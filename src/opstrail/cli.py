@@ -326,6 +326,8 @@ def cmd_popup(args: argparse.Namespace) -> int:
         popup.review(cfg, args.date)
     elif args.kind == "meeting":
         popup.meeting(cfg, args.episode)
+    elif args.kind == "voice":
+        popup.voice(cfg, args.episode)
     elif args.kind == "toast":
         popup.toast(" ".join(args.message) or "OpsTrail")
     return 0
@@ -558,7 +560,7 @@ def build_parser() -> argparse.ArgumentParser:
     pg.set_defaults(fn=cmd_purge)
 
     pu = sub.add_parser("popup", help=argparse.SUPPRESS)
-    pu.add_argument("kind", choices=["note", "task", "shot", "review", "toast", "meeting"])
+    pu.add_argument("kind", choices=["note", "task", "shot", "review", "toast", "meeting", "voice"])
     pu.add_argument("--episode", type=int, default=0)
     pu.add_argument("message", nargs="*")
     pu.add_argument("--path", default="")

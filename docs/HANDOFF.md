@@ -50,7 +50,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
-- ~~T-101 browser extension (GPT)~~ done · T-103 voice note (GPT)
+- ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
 - ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
@@ -80,6 +80,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
 
 ## Done
+
+- T-103 voice note — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Ctrl+Alt+V + meeting-summary voice action,
+  bounded recorder/Tk indicator, local small + explicit OpenAI/Azure, redacted voice notes, WAV cleanup.
+  Files: `voice.py`, service/config/cli, agent daemon/popup, pyproject, `tests/test_voice.py`, `tests/test_windows.py`, SPEC/README/card/plan. Python gates blocked by launcher; desktop/model/cloud smoke pending.
 
 - T-101 browser URL capture — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. MV3 focused-tab capture, per-install
   pairing Settings, protected ingest, privacy filters/redaction, URL classification and source-pack facts.
@@ -121,6 +125,11 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-103 audio cleanup/cancel/pause, cross-process lock,
+  episode attachment before transcription and provider credential isolation. Run pytest + eval
+  (shared Python cannot launch in Codex sandbox), then real desktop microphone/timer/local-download
+  smoke and synthetic OpenAI/Azure Whisper requests. Check optional dependency installation on Windows.
+
 - [ ] Claude (Claude Code): review T-101 token/Origin/Host isolation, URL query/fragment privacy,
   classification/source-pack integration and worker debounce/focus races. Run pytest + eval (shared Python
   launcher cannot start in Codex sandbox), then real Edge/Chrome load-unpacked pairing and InPrivate smoke.
@@ -143,6 +152,29 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-103 (GPT): follow the card inline/unattended; no skill approval pauses, commits,
+  installs or extra agent reviews (runner supplies Claude cross-review). Optional `voice` includes only
+  the card's sounddevice/faster-whisper; RawInputStream reads 100 ms mono/int16/16 kHz blocks, capped at
+  60 seconds of frames plus UI stop timer. Same existing RegisterHotKey path; no global keyboard hooks.
+- 2026-10-20 — T-103 (GPT): a popup owns Tk and a non-daemon worker owns SQLite/audio/model work.
+  voice.lock prevents simultaneous recordings/transcriptions across hotkey/meeting popup processes.
+  Freeze the explicit meeting or latest current/recent episode (15-minute existing note-attach default)
+  before transcription; save with add_note(source="voice") through ordinary redaction. No schema/MCP/API change.
+- 2026-10-20 — T-103 (GPT): local small CPU/int8+VAD is default, model cached under configured home/models.
+  First-use model download and explicitly selected cloud voice calls are authorized by the task card,
+  extending the older LLM-only outbound rule. OpenAI uses fixed official Whisper endpoint; Azure uses
+  existing HTTPS Settings endpoint/API version with a separate voice.azure_deployment for Whisper.
+  Reuse protected key only for a matching provider, otherwise provider-specific environment key;
+  never forward a different provider's saved key. No redirects/retries and generic failure messages.
+- 2026-10-20 — T-103 (GPT): temporary WAV is removed in finally, including cancellation/error; close/Esc
+  keeps the worker alive for cleanup and discards results. Pause stops via UI polling and checks before
+  upload/save. Already-started cloud uploads cannot be recalled. Forced process termination can leave
+  a TEMP WAV; document that limit instead of scanning/deleting potentially active recordings at startup.
+- 2026-10-20 — T-103 (GPT): fake recorder/transcriber, PCM cap, cloud request/credential, lock, cleanup,
+  popup control and Windows hotkey tests added. Targeted/full pytest and eval all fail before process
+  startup: shared venv reports "The file cannot be accessed by the system". No alternate Python or pip.
+  Gates remain for runner; real microphone/Tk, model download and cloud tenant smoke remain for Bro/Claude.
 
 - 2026-10-20 — T-101 (GPT): Settings reveals the per-install token only via protected POST `/api/browser/token`
   with no-store (never GET/status). Creation uses existing cross-process lock; random 32-byte token in

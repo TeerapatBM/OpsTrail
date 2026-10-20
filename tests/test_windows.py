@@ -16,6 +16,29 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 REPO = Path(__file__).resolve().parents[1]
 
 
+def test_voice_windows_hotkey_uses_popup(svc, monkeypatch):
+    from opstrail.agent import daemon, hotkeys
+    from opstrail.agent.hotkeys import win_combo
+    cfg = svc.cfg
+    cfg.data["web"]["enabled"] = False
+    seen = []
+    monkeypatch.setattr(daemon, "setup_logging", lambda cfg: None)
+    monkeypatch.setattr(daemon, "acquire_lock", lambda cfg: True)
+    monkeypatch.setattr(daemon, "release_lock", lambda cfg: None)
+    monkeypatch.setattr(daemon, "OpsTrail", lambda cfg: svc)
+    monkeypatch.setattr(daemon.osapi, "set_dpi_aware", lambda: None)
+    monkeypatch.setattr(daemon.osapi, "spawn_popup", lambda args: seen.append(args))
+    monkeypatch.setattr(daemon.Agent, "run", lambda self: None)
+
+    def register(bindings):
+        assert win_combo(cfg.hotkeys["voice"]) == (3, ord("V"))
+        bindings[cfg.hotkeys["voice"]]()
+
+    monkeypatch.setattr(hotkeys, "start", register)
+    assert daemon.run_agent(cfg) == 0
+    assert seen == [["voice"]]
+
+
 def test_tray_windows_thread_and_status_images(svc, monkeypatch):
     """Exercise Windows thread lifecycle + real Pillow images without a desktop."""
     import threading

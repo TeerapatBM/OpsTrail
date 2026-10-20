@@ -428,6 +428,8 @@ def run_agent(cfg: Config, *, with_hotkeys: bool = True) -> int:
 
             hk = cfg.hotkeys
             bindings: dict[str, Callable[[], None]] = {}
+            if hk.get("voice"):
+                bindings[hk["voice"]] = lambda: osapi.spawn_popup(["voice"])
             if hk.get("note"):
                 bindings[hk["note"]] = lambda: osapi.spawn_popup(["note"])
             if hk.get("task"):

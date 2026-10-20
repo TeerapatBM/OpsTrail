@@ -50,6 +50,7 @@ agent ยังบันทึกตามปกติและใช้ hotkey/
 | ปุ่มลัด | ทำอะไร |
 |---|---|
 | `Ctrl+Alt+N` | จดโน้ตสั้นๆ — **ทำไม** ถึงทำ / ตัดสินใจอะไร / ผลเป็นยังไง (สำคัญที่สุดต่อคุณภาพเอกสาร) |
+| `Ctrl+Alt+V` | พูดสรุปงานประมาณ 20 วินาที (สูงสุด 60 วินาที) แล้วถอดเสียงเป็นโน้ต |
 | `Ctrl+Alt+S` | ถ่ายรูปหน้าต่างที่ใช้อยู่ + ใส่คำอธิบาย (ไว้ใช้ใน SOP) |
 | `Ctrl+Alt+T` | เริ่ม/จบ "งาน" แบบกำหนดเอง เช่น "ติดตั้ง Splunk UF ที่ลูกค้า X" |
 | `Ctrl+Alt+P` | หยุด/เริ่มบันทึกชั่วคราว (เช่น ตอนทำเรื่องส่วนตัว) |
@@ -176,11 +177,25 @@ time = "17:30"
 
 ## ความเป็นส่วนตัว / ความปลอดภัย
 
+- Voice note เปิดไมโครโฟนเฉพาะเมื่อกด `Ctrl+Alt+V` หรือปุ่ม **พูดสรุป (Voice)** ใน popup สรุปประชุม
+  มีหน้าต่างจับเวลาและปุ่มหยุด; Esc/ปิดหน้าต่าง = ยกเลิก เสียง WAV ชั่วคราวถูกลบเมื่อจบหรือเกิดข้อผิดพลาด
+  ค่าเริ่มต้น `[voice] backend = "local"` ใช้ faster-whisper `small` ในเครื่อง (ดาวน์โหลด model ครั้งแรกไป
+  `$OPSTRAIL_HOME/models` หรือ `~/.opstrail/models`; ต้องมี internet สำหรับดาวน์โหลด แต่ไม่ส่งเสียงออก)
+  ติดตั้งเพิ่มด้วย `python -m pip install -e ".[voice]"` แล้ว `opstrail restart`; หากยังไม่ติดตั้งจะมี toast แนะนำ
+  รองรับไทย + English; โน้ตผ่าน redaction และผูกกับงานปัจจุบัน/ที่เพิ่งจบ หรือประชุมที่กดปุ่ม
+  ถ้าเลือก `[voice] backend = "openai"` หรือ `"azure"` จะส่ง **เสียงดิบที่ยัง redact ไม่ได้** ไป cloud เท่านั้น
+  ใช้ key ใน Settings เมื่อ provider ตรงกัน หรือ `OPENAI_API_KEY` / `AZURE_OPENAI_API_KEY`;
+  OpenAI ใช้ `whisper-1` ส่วน Azure ต้องตั้ง HTTPS endpoint ใน Settings และ `[voice] azure_deployment`
+  เป็นชื่อ **Whisper deployment** (แยกจาก chat deployment) อาจมีค่าบริการตาม provider
+  การยกเลิกหลังเริ่ม upload หยุดการส่งที่เกิดขึ้นแล้วไม่ได้ แต่จะไม่เก็บโน้ต;
+  ขณะ pause จะไม่เริ่มอัด และจะทิ้งผลถ้า pause ระหว่างทำงาน ไม่อัดเสียงประชุมอัตโนมัติ
+  ถ้าเครื่องหรือ process ปิดผิดปกติ อาจมี WAV ค้างในโฟลเดอร์ TEMP ให้ลบ `opstrail-voice-*.wav`
 - หน้าเว็บ bind เฉพาะ `127.0.0.1` + ตรวจ Host header (กัน DNS rebinding) + ต้องมี header เฉพาะสำหรับคำสั่งที่แก้ข้อมูล (กัน CSRF จากเว็บอื่น) + CSP
 - API key ของ AI เก็บแบบเข้ารหัส Windows DPAPI (ผูกกับ user ของเครื่องนี้) — ข้อมูลที่ส่งให้ AI คือ source pack ที่ redact แล้ว
   ถ้าต้องการให้ข้อมูลลูกค้าอยู่ใน tenant ของบริษัท ใช้ **Azure OpenAI** หรือ model ในเครื่อง (Ollama)
 - **ไม่ใช่ keylogger**: บน Windows ใช้ `RegisterHotKey` — Windows แจ้งเฉพาะปุ่มลัดของ OpsTrail ไม่มีการดักทุกปุ่มที่พิมพ์ (ไม่โดน EDR มองว่าเป็น keyboard hook)
-- ข้อมูลทั้งหมดอยู่ใน `~/.opstrail` บนเครื่องตัวเอง ไม่มีการส่งออก (ยกเว้นตอนที่ AI client อ่านผ่าน MCP)
+- ข้อมูลหลักอยู่ใน `~/.opstrail` บนเครื่องตัวเอง; ส่งออกเมื่อ AI client อ่านผ่าน MCP,
+  ใช้ AI write, เปิด Teams digest หรือเลือก cloud backend สำหรับ Voice note
 - password, token, key, connection string, JWT, `-Password`, `ConvertTo-SecureString`, URL credentials ฯลฯ
   ถูกแทนด้วย `[REDACTED]` ก่อนบันทึก เพิ่ม pattern เองได้ที่ `[redaction] extra_patterns`
 - แอป/หน้าต่างที่ไม่บันทึก: chat, password manager, banking, InPrivate/Incognito (แก้ได้)

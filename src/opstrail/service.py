@@ -236,6 +236,11 @@ class OpsTrail:
         rebuild_episodes(self.store, self.cfg, d)
         return self.list_episodes(d)
 
+    def record_voice(self, episode_id: int | None = None, **kwargs: Any) -> dict[str, Any] | None:
+        from opstrail.voice import capture_note
+
+        return capture_note(self, episode_id, **kwargs)
+
     def add_note(self, text: str, episode_id: int | None = None, source: str = "cli") -> dict[str, Any]:
         if not text.strip():
             raise OpsTrailError("note text is required")

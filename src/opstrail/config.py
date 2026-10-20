@@ -52,10 +52,15 @@ exclude_title_patterns = [
 ]
 
 [hotkeys]
+voice = "<ctrl>+<alt>+v"       # พูดโน้ตสั้นๆ (สูงสุด 60 วินาที)
 note = "<ctrl>+<alt>+n"        # จดโน้ตสั้นๆ (ทำไม/ตัดสินใจอะไร)
 screenshot = "<ctrl>+<alt>+s"  # ถ่ายรูปหน้าต่างปัจจุบันไว้ใช้ใน SOP
 task = "<ctrl>+<alt>+t"        # เริ่ม/จบงาน (manual episode)
 pause = "<ctrl>+<alt>+p"       # หยุด/เริ่มบันทึกชั่วคราว
+
+[voice]
+backend = "local"       # local (faster-whisper small), openai หรือ azure
+azure_deployment = ""  # Azure Whisper deployment (แยกจาก chat deployment ใน Settings)
 
 [episodes]
 idle_split_min = 25    # เว้นช่วงนานเกินนี้ = เริ่มงานใหม่
