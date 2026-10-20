@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "PowerShell",
+      "WebFetch",
+      "WebSearch",
+      "TodoWrite"
+    ],
+    "deny": [
+      "Read(~/.opstrail/**)",
+      "Edit(~/.opstrail/**)",
+      "Write(~/.opstrail/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "PowerShell(git push --force *)",
+      "PowerShell(git push -f *)",
+      "mcp__opstrail"
+    ]
+  },
+  "env": {
+    "OPSTRAIL_NO_CAPTURE": "1"
+  }
+}
