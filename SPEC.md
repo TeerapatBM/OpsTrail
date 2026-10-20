@@ -482,6 +482,11 @@ Explicit review and `eval --llm` authorize calls to the configured reviewer prov
   v0.3.1: development autopilot `scripts/duo.ps1` (Claude Code + Codex on subscriptions, cross-review, gated merge).
 * **next (Phase B, task cards T-101…T-108)** – browser URL capture, meeting presence while screen sharing, voice
   notes, web diff + streaming, Teams digest, PowerShell output capture, cross-model draft review, tray icon.
-* **later** – M365 connector (T-109, needs approval); team mode (T-110): central server (Postgres), per-user auth,
-  cloud audit-log collectors (Azure Activity/Entra, Alibaba ActionTrail, vCenter events), web review UI,
-  SharePoint/Confluence publishing, knowledge-base search across the team.
+* **later** – M365 connector (T-109, needs approval).
+* **Phase C – team mode**: design in [`docs/team-mode.md`](docs/team-mode.md) (T-110, proposal awaiting Bro's
+  approval): API-only "OpsTrail Hub" (Starlette + SQLite) in this repo, Entra ID SSO with app roles
+  member/lead/admin, push of user-previewed work entries and final documents only (raw capture never leaves the
+  laptop), lead approval, customer registry/tagging, team KB search (web + read-only MCP tools), weekly report,
+  man-days per customer, PDPA (notice, export, erasure, retention), threat model. Cards T-201…T-210 (blocked until
+  approval). Nothing in §2–§8 changes until those cards land. Cloud audit-log collectors and SharePoint/Confluence
+  publishing are out of scope for team mode v1.

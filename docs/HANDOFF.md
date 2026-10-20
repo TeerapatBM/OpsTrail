@@ -53,7 +53,8 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 - ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
 - ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
 - ~~T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT)~~ done · T-109 M365 connector (Claude, blocked: M365 approval)
-- T-110 team-mode design (Claude → reviewed by GPT)
+- ~~T-110 team-mode design (Claude)~~ done → **Bro: approve `docs/team-mode.md` + answer its §14**, then set
+  T-201…T-210 to `**Status:** todo` (all `blocked` until then so the nightly duo run doesn't start them)
 
 Older backlog items (kept for reference):
 
@@ -76,10 +77,18 @@ Older backlog items (kept for reference):
    per-section "rewrite this section" button. _suggested: GPT_
 10. [ ] **ChatGPT (web/desktop) as an MCP client**: expose HTTP MCP through Cloudflare Tunnel with OAuth
    (lower priority now that the web UI + copy/paste covers ChatGPT).
-11. [ ] **Team mode (v0.3)**: central server (Postgres), per-user auth, cloud audit-log collectors
-    (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
+11. [ ] **Team mode**: designed in `docs/team-mode.md` (T-110) → cards T-201…T-210. Cloud audit-log collectors
+    (Azure Activity/Entra, Alibaba ActionTrail, vCenter) and SharePoint publishing stay separate, not yet carded.
 
 ## Done
+
+- T-110 team-mode design — Claude, 2026-10-20 [claimed: Claude 2026-10-20]. `docs/team-mode.md`: API-only Hub
+  (Starlette + SQLite), Entra SSO + app roles, push of previewed work entries/final docs only, lead approval,
+  customers, KB search, weekly report/man-days, PDPA, threat model; cards T-201…T-210 (blocked until Bro approves).
+  Files: `docs/team-mode.md`, `docs/tasks/T-201…T-210`, `tests/test_task_cards.py`, SPEC §9, README, HANDOFF.
+  Round 2 (GPT review): minutes are non-overlapping (`active_min` only, `meeting_min` ⊆ it, never added; `segments`
+  overlap check) + meeting fixture in T-204/T-208; customer is per revision with one `can_read` checking the
+  approved and pending revisions' customers + retag tests in T-206/T-207/T-208. Files: `docs/team-mode.md` §6.1/§7/§9/§11/§14, cards T-204/206/207/208.
 
 - T-107 cross-model review — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Separate reviewer profile/keys,
   strict JSON + one validation retry, deterministic warnings, version-bound doc_reviews, Thai editor/settings and advisory eval score.
@@ -129,6 +138,11 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] GPT (Codex): review T-110 `docs/team-mode.md` as a design (comments in the PR): SQLite-instead-of-Postgres
+  (§3), token validation rules (§4), publish projection + "no MCP submit" (§6), state machine (§7), man-day formula
+  (§9), PDPA legal-basis/retention proposal (§10), threat model gaps (§11), card split/order (§13). Also check the
+  T-201…T-210 cards are buildable in one duo run each.
+
 - [ ] Claude (Claude Code): review T-107 profile/key isolation, JSON validation/retry, redaction,
   snapshot/version persistence, editor save/lock behavior and advisory eval scores. Run pytest + eval
   (shared Python launcher cannot start in Codex sandbox), then extended Playwright smoke (module unavailable here).
@@ -160,6 +174,36 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-110 (Claude): team mode = a separate API-only **Hub** in this repo (`src/opstrail/hub/`), no hub web
+  frontend: leads also use their local web UI, which calls the Hub from Python (browser never talks to the Hub, so
+  LocalOnly/CSP stay as they are and no cookies/CSRF on the Hub). The team KB is read online, not cached on laptops.
+- 2026-10-20 — T-110 (Claude): Hub storage = **SQLite**, superseding "Postgres" in the old roadmap: tiny write volume,
+  existing Thai trigram FTS, and every Hub test runs in the duo gate on Bro's laptop and on both CI runners without a
+  DB server. Portable SQL; move to Postgres at > 50 users / HA / no reliable local disk.
+- 2026-10-20 — T-110 (Claude): "approved" has two gates — the **owner** approves what leaves the laptop (preview of the
+  exact payload, re-redacted on client and Hub), a **lead** approves what enters the KB / man-day totals (no
+  self-approval by default). Work entries are a projection (times, minutes, customer, confirmed title, summary);
+  commands, window titles, URLs, notes, output never upload. Submitting is human-only (web/CLI), **no MCP submit**;
+  MCP gets read-only `team_search`/`team_get_doc`/`team_weekly` with untrusted-data framing.
+- 2026-10-20 — T-110 (Claude): roles come only from Entra **app roles** (`roles` claim, assignment required); identity
+  = `oid`; Hub holds no secrets (validates tokens with public JWKS). Proposed deps `msal` (extra `team`) and
+  `PyJWT[crypto]` (extra `hub`) — need Bro's OK (AGENTS rule 7), listed in design §14.
+- 2026-10-20 — T-110 (Claude): customer = episode tag `customer:<CODE>` / doc `meta.customer` (no local schema change);
+  registry keywords merge after local `[projects]`. PDPA legal basis proposed as contract/legitimate interest (not
+  employee consent) with per-person opt-in + per-item submit; retention defaults and notice are drafts for DPO review.
+- 2026-10-20 — T-110 round 2 (Claude, from GPT review): work-entry minutes = `claimed_min` else `active_min`
+  (focus time; T-102 already counts a screen-shared call once); `meeting_min` is a subset breakdown, never added.
+  Customer moved from `items` to each revision; approved content is readable only if the user may see the customer
+  of `approved_rev` **and** of a pending newer revision (fail closed in both retag directions) — chosen over making
+  the customer immutable, because a wrong tag must stay correctable without withdrawing approved work.
+- 2026-10-20 — T-110 round 3 (Claude, from GPT review): published `active_min` = union of **focused-window**
+  intervals, computed by the projection — not `stats.active_s`, whose event-span fallback (no focus windows) would
+  turn two shell commands 20 min apart into 20 captured minutes. Shell-only / notes-only / presence-only episodes
+  publish `active_min = 0` with a preview warning; uncaptured work is reported only as `claimed_min`. Local
+  `stats.active_s` and its fallback stay unchanged (titles/recaps). Shell-only fixtures added to T-204/T-208.
+- 2026-10-20 — T-110 (Claude): new cards are `**Status:** blocked` (duo treats a missing status as `todo` and would
+  start building before approval); `tests/test_task_cards.py` keeps every card parseable by `duo.ps1`.
 
 - 2026-10-20 — T-107 (GPT): execute card inline/unattended; runner supplies Claude cross-review.
   Legacy writer stays at llm.json root; reviewer is nested with the same fields and separate protected key.
