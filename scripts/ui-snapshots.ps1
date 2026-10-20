@@ -5,9 +5,14 @@ param(
     [string]$OutputDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
-if (-not $Python) { $Python = Join-Path $PSScriptRoot '..\..\..\OpsTrail\.venv\Scripts\python.exe' }
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '..\docs\design\screens' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if (-not $Python) {
+    $Python = Join-Path $repo '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $Python)) {
+        $Python = Join-Path $PSScriptRoot '..\..\..\OpsTrail\.venv\Scripts\python.exe'
+    }
+}
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '..\docs\design\screens' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $candidates = @(
     "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -33,6 +38,70 @@ $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = $listener.LocalEndpoint.Port
 $listener.Stop()
+
+function Invoke-SnapshotCommand($Socket, [int]$Id, [string]$Method, $Params) {
+    $json = @{ id = $Id; method = $Method; params = $Params } | ConvertTo-Json -Depth 10 -Compress
+    $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+    $cancel = New-Object Threading.CancellationTokenSource(15000)
+    try {
+        $Socket.SendAsync([ArraySegment[byte]]::new($bytes), [Net.WebSockets.WebSocketMessageType]::Text,
+            $true, $cancel.Token).GetAwaiter().GetResult() | Out-Null
+        do {
+            $stream = New-Object IO.MemoryStream
+            try {
+                do {
+                    $buffer = New-Object byte[] 65536
+                    $part = $Socket.ReceiveAsync([ArraySegment[byte]]::new($buffer), $cancel.Token).GetAwaiter().GetResult()
+                    if ($part.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) { throw 'DevTools socket closed.' }
+                    $stream.Write($buffer, 0, $part.Count)
+                } until ($part.EndOfMessage)
+                $message = [Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+            } finally { $stream.Dispose() }
+        } until ($message.id -eq $Id)
+        if ($message.error) { throw ($message.error | ConvertTo-Json -Compress) }
+        return $message.result
+    } finally { $cancel.Dispose() }
+}
+
+function Save-PhoneSnapshot($BrowserProfile, $Url, $Target) {
+    # Port 0 avoids collisions; Chromium writes its chosen loopback port into this isolated profile.
+    $activePort = Join-Path $BrowserProfile 'DevToolsActivePort'
+    for ($attempt = 0; $attempt -lt 100; $attempt++) {
+        if (Test-Path -LiteralPath $activePort) { break }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Test-Path -LiteralPath $activePort)) { throw 'DevTools did not become ready.' }
+    $debugPort = [int](Get-Content -LiteralPath $activePort -TotalCount 1)
+    $tabs = Invoke-RestMethod "http://127.0.0.1:$debugPort/json/list" -TimeoutSec 5
+    $pageTab = @($tabs | Where-Object { $_.type -eq 'page' })[0]
+    $socket = New-Object Net.WebSockets.ClientWebSocket
+    $cancel = New-Object Threading.CancellationTokenSource(15000)
+    try {
+        $socket.ConnectAsync([Uri]$pageTab.webSocketDebuggerUrl, $cancel.Token).GetAwaiter().GetResult() | Out-Null
+        Invoke-SnapshotCommand $socket 1 'Emulation.setDeviceMetricsOverride' @{
+            width = 390; height = 844; deviceScaleFactor = 1; mobile = $true
+        } | Out-Null
+        Invoke-SnapshotCommand $socket 2 'Page.navigate' @{ url = $Url } | Out-Null
+        # Wait for the SPA's asynchronous data/render work, not just document load.
+        $readyExpression = "document.readyState === 'complete' && innerWidth === 390 && document.documentElement.scrollWidth <= 390 && (location.hash.startsWith('#/docs/') ? !!document.querySelector('#md')?.value : !!document.querySelector('#eps')?.children.length)"
+        $loaded = $false
+        for ($attempt = 0; $attempt -lt 80; $attempt++) {
+            $state = Invoke-SnapshotCommand $socket (10 + $attempt) 'Runtime.evaluate' @{ expression = $readyExpression; returnByValue = $true }
+            if ($state.result.value) { $loaded = $true; break }
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not $loaded) { throw 'Phone page did not render.' }
+        Start-Sleep -Milliseconds 1000
+        $result = Invoke-SnapshotCommand $socket 100 'Page.captureScreenshot' @{
+            format = 'png'; captureBeyondViewport = $false
+        }
+        [IO.File]::WriteAllBytes($Target, [Convert]::FromBase64String($result.data))
+    } finally {
+        $socket.Dispose()
+        $cancel.Dispose()
+    }
+}
+
 try {
     $env:OPSTRAIL_HOME = Join-Path $runRoot 'home'
     $env:OPSTRAIL_NO_CAPTURE = '1'
@@ -72,17 +141,24 @@ try {
                 $captured = $false
                 foreach ($browser in $browsers) {
                     # Each invocation gets a new profile, so a saved preference cannot defeat OS emulation.
-                    $profile = Join-Path $runRoot ([Guid]::NewGuid().ToString('N'))
+                    $browserProfile = Join-Path $runRoot ([Guid]::NewGuid().ToString('N'))
                     $browserArgs = @('--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
                         '--disable-background-networking', '--disable-component-update', '--hide-scrollbars',
-                        '--force-device-scale-factor=1', '--virtual-time-budget=4000',
-                        "--window-size=$size", "--user-data-dir=`"$profile`"", "--screenshot=`"$target`"")
+                        '--force-device-scale-factor=1', "--user-data-dir=`"$browserProfile`"")
+                    $phone = $size -eq '390,844'
+                    if ($phone) { $browserArgs += @('--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', 'about:blank') }
+                    else { $browserArgs += @('--virtual-time-budget=4000', "--window-size=$size", "--screenshot=`"$target`"") }
                     if ($mode -eq 'dark') { $browserArgs += '--force-dark-mode' }
                     else { $browserArgs += '--force-color-profile=srgb' }
-                    $browserArgs += "`"$base/?snapshot_theme=$mode$($pages[$page])`""
+                    $url = "$base/?snapshot_theme=$mode$($pages[$page])"
+                    if (-not $phone) { $browserArgs += "`"$url`"" }
                     $proc = Start-Process -FilePath $browser -ArgumentList $browserArgs -WindowStyle Hidden -PassThru `
                         -RedirectStandardOutput (Join-Path $runRoot 'browser.out') -RedirectStandardError (Join-Path $runRoot 'browser.err')
-                    if (-not $proc.WaitForExit(45000)) { $proc.Kill() }
+                    if ($phone) {
+                        try { Save-PhoneSnapshot $browserProfile $url $target }
+                        catch { Write-Warning "Phone capture failed: $_" }
+                        finally { if (-not $proc.HasExited) { $proc.Kill(); $proc.WaitForExit(5000) | Out-Null } }
+                    } elseif (-not $proc.WaitForExit(45000)) { $proc.Kill() }
                     if ((Test-Path -LiteralPath $target) -and (Get-Item -LiteralPath $target).Length -gt 1000) {
                         $captured = $true; break
                     }

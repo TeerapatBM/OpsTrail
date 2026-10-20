@@ -48,7 +48,9 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 ## Backlog (top = next) — detailed cards in docs/tasks/
 
-
+- T-111 Web UI redesign — **needs-bro**, GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Implementation and
+  round-2 CDP phone capture fix delivered; shared Python still cannot start in this sandbox. Runner/Claude
+  must generate, inspect and commit 16 real PNGs plus manifest, then rerun pytest/eval. See screen README.
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
@@ -82,10 +84,6 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter) and SharePoint publishing stay separate, not yet carded.
 
 ## Done
-
-- T-111 Web UI redesign — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Operations watch palette,
-  trail navigation/episodes, Thai-first responsive components, guarded/persistent auto/light/dark selectors.
-  Files: `web/static/{app.css,app.js,index.html,theme.js,mark.svg}`, `scripts/ui-snapshots.ps1`, `scripts/ui_snapshot_server.py`, `tests/test_web_theme.py`, `tests/web_theme.cjs`, `tests/test_windows.py`, `tests/web_editor_smoke.cjs`, design docs, README/SPEC/card. OPEN: Python gates and real PNG set/visual QA blocked here; see `docs/design/screens/README.md`.
 
 - T-110 team-mode design — Claude, 2026-10-20 [claimed: Claude 2026-10-20]. `docs/team-mode.md`: API-only Hub
   (Starlette + SQLite), Entra SSO + app roles, push of previewed work entries/final docs only, lead approval,
@@ -143,6 +141,8 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude Code: T-111 round 2 — review CDP phone path and mocked transport test; run snapshots on the host,
+  inspect/commit all 16 PNGs + manifest and rerun gates (shared Python cannot start in builder sandbox).
 - [ ] Claude Code: review T-111 for functionality, accessibility/Thai layout, escaping and CSP regressions.
   Run pytest/eval and `scripts/ui-snapshots.ps1` with shared venv; inspect/commit the 16 real PNGs.
   Node theme/contrast tests and mocked PowerShell capture matrix pass; real Python/browser capture could not run here.
@@ -184,6 +184,18 @@ Older backlog items (kept for reference):
 
 ## Decision log
 
+- 2026-10-20 — T-111 round 2 (GPT): accept review's Windows headless minimum-width diagnosis. Phone capture
+  now uses built-in ClientWebSocket, loopback ephemeral DevTools port, metrics before navigation and viewport
+  capture; readiness checks actual 390px width/no overflow and seeded content. Desktop path remains as reviewed.
+  Windows mock exercises real protocol sequencing, asynchronous events, fragmented replies, decoding and disposal.
+  Local venv is the default before shared-worktree fallback; renamed browserProfile to avoid built-in PROFILE.
+  Moved incomplete task out of Done to needs-bro: capture/pytest/eval all attempted again, shared Python fails
+  before startup with system access error. Claude's host round-1 gate was 239 passed / eval 22/22 and visual
+  layouts were approved; corrected captures and fresh updated gate still require host execution. No disagreement.
+  Verification here: extracted Windows mock passes all 16 outputs and rejects the old phone path; Node theme
+  and contrast checks, PowerShell parse/ASCII and diff checks pass. Native Edge probe exposed/fixed PS 5.1
+  JSON-array handling, then Edge exited with unusable GPU before WebSocket connection. Optional editor smoke
+  cannot run (Playwright absent); no dependencies installed. No generated PNGs/manifest in tracked screens yet.
 - 2026-10-20 — T-111 (GPT): use Operations watch (ink-blue + teal), a three-node trail mark and episode
   rail, a joined summary strip and quiet bordered surfaces. Thai-first Leelawadee UI/Noto Sans Thai/Tahoma,
   generous line height, fixed streaming panes, mobile tabs/labelled table rows, visible focus/reduced motion.

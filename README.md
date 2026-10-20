@@ -25,6 +25,7 @@
 สำหรับผู้พัฒนา: `powershell -ExecutionPolicy Bypass -File scripts\ui-snapshots.ps1 -Python ".venv\Scripts\python.exe"`
 สร้างภาพแต่ละหน้าทั้งสองธีมและภาพมือถือใน `docs/design/screens/` โดยใช้ golden-day fixtures เท่านั้น
 เริ่ม server และ browser profile ใหม่ใน `.tmp` ไม่อ่านข้อมูล OpsTrail จริง ไม่เรียก AI และไม่ดาวน์โหลด browser
+ภาพมือถือใช้ DevTools จำลอง viewport 390x844 ก่อนเปิดหน้า เพื่อป้องกัน headless Windows ตัดภาพจากหน้าที่กว้างกว่า
 ต้องมี venv ที่ใช้งานได้และ Microsoft Edge หรือ Chrome; เก็บ log ใน `.tmp/ui-snapshots-*` เมื่อตรวจไม่สำเร็จ
 
 ## System tray (Windows)

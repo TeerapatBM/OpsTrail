@@ -2,7 +2,7 @@
 
 **Suggested owner:** GPT (Codex) · **Phase:** B · **Size:** L
 
-**Status:** done · **Priority:** 1
+**Status:** needs-bro · **Priority:** 1
 
 > Bro: "อยากยกเครื่องธีมของ web UI ใหม่หมด ให้ GPT เป็นคนออกแบบทั้งหมด"
 > GPT owns every design decision (concept, colours, typography, layout, components, icons, motion).
@@ -35,6 +35,7 @@ UI language: Thai with English technical terms.
    `scripts/ui-snapshots.ps1` (ASCII-only) that starts the web app on a throw-away `OPSTRAIL_HOME` seeded from
    the golden days in `evals/days/` (synthetic data only), then uses the installed headless Microsoft Edge
    (fallback Chrome; no Playwright, no downloads) with `--headless --screenshot --window-size=...`
+   for desktop; phone uses loopback DevTools device emulation and `Page.captureScreenshot`
    (`--force-dark-mode` for dark) to write PNGs to `docs/design/screens/`:
    each main page x {light, dark} at 1440x900, plus day view and editor at 390x844 (phone).
    Commit the resulting PNGs.
@@ -52,17 +53,20 @@ UI language: Thai with English technical terms.
 
 ## Acceptance criteria
 - [x] `docs/design/WEB-THEME.md` exists and matches what was built
-- [x] all pages restyled; light, dark and auto theme switch works and persists (controller tested; live visual QA pending)
+- [x] all pages restyled; light, dark and auto theme switch works and persists (controller tested; Claude confirmed desktop and real 360/390px layouts)
 - [ ] `scripts/ui-snapshots.ps1` produces the PNG set in `docs/design/screens/` (committed)
 - [ ] `pytest` + `opstrail eval` green; existing web tests updated only where markup legitimately changed
 - [x] a pytest that checks: no external URLs (`http://`/`https://` hosts) in `static/*`, no inline `<script>`
       or `on*=` attributes in `index.html`, theme tokens defined for both light and dark
 - [x] README (Thai): short note about the new theme switch and `scripts/ui-snapshots.ps1`
 
-Implementation delivered; OPEN environment gates: prescribed shared Python fails before startup with
-“The file cannot be accessed by the system”. Real PNG capture/commit and visual review are pending
-runner/Claude; no synthetic replacement images were committed. Node theme/AA contrast tests and mocked
-Windows PowerShell 16-capture matrix pass. See `docs/design/screens/README.md` for exact reproduction.
+Round 2: corrected phone capture with DevTools metrics before navigation (390x844, scale 1, mobile),
+render/width checks and viewport screenshots. Fixed local-venv default and browser profile variable.
+Claude's round-1 gate: 239 tests passed, eval 22/22; desktop and real phone layouts visually approved.
+Fresh pytest/eval and capture attempts still fail here because the prescribed shared Python cannot start:
+“The file cannot be accessed by the system”. No real PNGs/manifest can be delivered from this sandbox.
+Status remains needs-bro until runner/Claude captures, inspects and commits the corrected 16 PNGs plus
+manifest and reruns the updated gate. No mock images are included. See `docs/design/screens/README.md`.
 
 ## Review guidance (for Claude)
 Run `scripts/ui-snapshots.ps1` if you can and look at the PNGs. Ask for CHANGES only for: broken or

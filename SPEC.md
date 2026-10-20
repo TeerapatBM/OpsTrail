@@ -421,6 +421,8 @@ Explicit review and `eval --llm` authorize calls to the configured reviewer prov
   external `theme.js` applies before CSS and auto follows live OS colour changes. No server config/API change.
   `scripts/ui-snapshots.ps1` runs a synthetic-only seed/server helper under the existing LocalOnly middleware,
   with isolated home/browser profiles; its theme bootstrap routes exist only in that development helper.
+  Desktop captures use headless screenshot flags; phone captures use loopback DevTools via built-in
+  ClientWebSocket, mobile 390x844 metrics before navigation, render/width checks and viewport PNG capture.
 * Bound to 127.0.0.1 (`[web] port`, default 8765). Middleware `LocalOnly`: Host header must be loopback
   (DNS-rebinding defence); non-GET requests need `X-OpsTrail: 1` and a same-origin Origin (CSRF defence);
   CSP `script-src 'self'`, `frame-ancestors 'none'`, `Cross-Origin-Resource-Policy: same-origin`.
