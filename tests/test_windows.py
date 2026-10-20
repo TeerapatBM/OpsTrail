@@ -296,3 +296,33 @@ Run 'cmd-g' 7
     finally:
         svc.store.close()
     assert list((cfg.home / "transcripts").glob("*.txt")) == []
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_powershell_51_lazy_transcript_header(cfg):
+    """A lazily created transcript may begin with a UTF-8 BOM, including after resume."""
+    hook = REPO / "hooks" / "powershell" / "OpsTrail.ps1"
+    script = f"""
+$ErrorActionPreference = 'Stop'
+. '{hook}'
+$file = Join-Path $global:OpsTrailHome 'lazy-transcript.txt'
+try {{
+    foreach ($bom in @($false, $true)) {{
+        $text = "**********************`r`nWindows PowerShell transcript start`r`n**********************`r`nvisible output`r`n"
+        [IO.File]::WriteAllText($file, $text, (New-Object Text.UTF8Encoding($bom)))
+        $global:OpsTrailTranscript = $file
+        $global:OpsTrailTranscriptPos = -1
+        $output = Read-OpsTrailTranscript
+        if ($output -ne "visible output`r`n") {{ throw "lost lazy transcript output (BOM=$bom)" }}
+        if (Read-OpsTrailTranscript) {{ throw 'output read twice' }}
+    }}
+}} finally {{
+    $global:OpsTrailTranscript = $null
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+}}
+"""
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True, text=True, env={**os.environ, "OPSTRAIL_HOME": str(cfg.home)}, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr

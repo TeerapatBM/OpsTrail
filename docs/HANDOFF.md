@@ -84,6 +84,8 @@ Older backlog items (kept for reference):
 - T-108 system tray — GPT, 2026-10-20. Optional background tray with queued Thai menu actions, green/grey
   pause state, existing-worklog preservation and graceful missing/backend fallback; normal shutdown cleanup.
   Files: `agent/tray.py`, `agent/daemon.py`, `pyproject.toml`, `tests/test_tray.py`, `tests/test_windows.py`, SPEC/README/card. Python gates blocked by sandbox launcher; runner + desktop smoke pending.
+  Round 2: fixed the gate's lazy PowerShell transcript header parsing for UTF-8 BOM; added a focused Windows regression.
+  Direct PowerShell regression and 10/10 unchanged pause/resume scripts pass; full pytest/eval remain blocked by the shared Python launcher.
 
 - T-105 Teams digest — GPT, 2026-10-20. Opt-in protected Settings webhook, title/time-only Adaptive Card 1.4,
   daemon-thread POST with one retry and safe logs; automatic recap gate includes yesterday's catch-up.
@@ -117,6 +119,7 @@ Older backlog items (kept for reference):
 
 - [ ] Claude (Claude Code): review T-108 tray startup/shutdown races, queued actions and worklog preservation;
   run pytest + eval (shared Python cannot launch in Codex sandbox), then Windows desktop smoke (Thai menu, colors, screenshots, exit).
+  Round 2 review request: include UTF-8 BOM handling in lazy transcript headers and `test_powershell_51_lazy_transcript_header`.
 
 - [ ] Claude (Claude Code): review T-105 secret persistence/API, capture-derived title suppression and background
   delivery/retry; run pytest + eval (shared Python cannot start in Codex sandbox), then synthetic Teams tenant smoke.
@@ -132,6 +135,15 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-108 round 2 (GPT): gate failure came from T-106's lazy transcript header parser, not tray code.
+  Reproduced missing output after the second resume; a deterministic synthetic-header test fails only with BOM.
+  UTF8.GetString preserves U+FEFF, so the anchored opening delimiter failed. Allow an optional BOM, keeping
+  the existing pause/output/privacy assertions unchanged. A timing hypothesis was disproven by waiting for
+  the output on disk; no sleeps or retries were added. Direct new regression passes and the extracted original
+  pause/resume script passes 10/10 with command/output/secret/cleanup assertions. Full pytest and eval were
+  attempted again but the shared Python launcher reports "The file cannot be accessed by the system";
+  runner gates remain required. No dependencies, schema or tray design changes.
 
 - 2026-10-20 — T-108 (GPT): card authorizes optional pystray/Pillow in `agent`; generate a simple status dot
   in memory (no asset/download). Run backend on its own daemon thread and enqueue callbacks for the agent

@@ -153,6 +153,7 @@ and deletes the file; files older than 12 h (shells closed with X) are deleted b
 Pause (`~/.opstrail/paused`): a shell started while paused does not start the transcript; when the flag appears, the
 next `prompt` stops the transcript and deletes the file (that prompt's output is discarded). The first `prompt`
 after the flag is removed starts a new file (`-<n>` suffix), so the first command after resume has no output.
+Lazy transcript headers are stripped with or without a UTF-8 BOM (Windows PowerShell 5.1), including after resume.
 Ingest redacts `output` like every string, then (`events.normalize`) drops it unless `shell_output` is on and cuts it
 to `shell_output_lines`. `text`/search stay command-only. Source packs list each command's output (max 15 lines,
 `    │ ` prefix, `│ …` when truncated) under the command; worklogs and title prompts don't. Not captured: bash/zsh
