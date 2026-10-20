@@ -2,7 +2,7 @@
 
 **Suggested owner:** Claude (design) → GPT + Claude (implementation) · **Phase:** C · **Size:** L
 
-**Status:** todo · **Priority:** 9
+**Status:** done · **Priority:** 9
 
 ## Goal
 A written design (docs/team-mode.md) before any code: central server, sync of *approved* episodes/documents
