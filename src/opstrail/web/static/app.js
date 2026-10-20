@@ -919,6 +919,29 @@ async function renderSettings() {
         <div>เวอร์ชัน</div><div>OpsTrail ${esc(st.version)}</div>
       </div>
     </div>`);
+  const browserCard = document.createElement("div");
+  browserCard.className = "card pad stack";
+  browserCard.innerHTML = `<h2>Browser extension</h2>
+    <p class="muted small">คัดลอก token ไปวางใน Options ของ OpsTrail extension (Edge/Chrome)
+    เพื่อบันทึก URL ของแท็บที่ใช้งาน ห้ามส่ง token ให้ผู้อื่น</p>
+    <button class="btn" id="browser-pair">แสดง token</button>
+    <input id="browser-token" readonly aria-label="Browser token" hidden>
+    <button class="btn" id="browser-copy" hidden>คัดลอก token</button>`;
+  v.prepend(browserCard);
+  $("#browser-pair", v).addEventListener("click", async () => {
+    try {
+      const result = await api("/api/browser/token", { body: {} });
+      $("#browser-token", v).value = result.token;
+      $("#browser-token", v).hidden = false;
+      $("#browser-copy", v).hidden = false;
+    } catch (e) { fail(e); }
+  });
+  $("#browser-copy", v).addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("#browser-token", v).value);
+      toast("คัดลอก token แล้ว");
+    } catch (e) { fail(e); }
+  });
   $("#p-save", v).addEventListener("click", async () => {
     try { prof = await api("/api/profile", { body: { author: $("#p-author", v).value, team: $("#p-team", v).value } }); toast(`บันทึกแล้ว — เอกสารจะใช้ชื่อ “${prof.effective_author}”`); }
     catch (e) { fail(e); }

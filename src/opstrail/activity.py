@@ -38,19 +38,20 @@ ACTIVITIES = {
 @dataclass
 class Rule:
     activity: str
-    types: set[str] = field(default_factory=lambda: {"window", "screenshot"})
+    types: set[str] = field(default_factory=lambda: {"window", "screenshot", "browser"})
     apps: set[str] = field(default_factory=set)
     browser: bool = False
     title: re.Pattern[str] | None = None
     title_exclude: re.Pattern[str] | None = None
     cmd: re.Pattern[str] | None = None
+    url: re.Pattern[str] | None = None
     subject: str = ""
 
-    def match(self, type_: str, app: str, title: str, cmd: str) -> tuple[str, str] | None:
+    def match(self, type_: str, app: str, title: str, cmd: str, url: str = "") -> tuple[str, str] | None:
         if type_ not in self.types:
             return None
         if self.apps or self.browser:
-            if not (app in self.apps or (self.browser and app in BROWSERS)):
+            if not (app in self.apps or (self.browser and (app in BROWSERS or type_ == "browser"))):
                 return None
         found: re.Match[str] | None = None
         if self.title is not None:
@@ -64,6 +65,10 @@ class Rule:
             if not found:
                 return None
         subject = self.subject
+        if self.url is not None:
+            found = self.url.search(url)
+            if not found:
+                return None
         if found is not None and "subject" in found.groupdict() and found.group("subject"):
             subject = found.group("subject").strip()
         return self.activity, subject
@@ -86,7 +91,10 @@ def _compile(raw: dict[str, Any]) -> Rule | None:
         except re.error:
             return None
 
-    types = set(raw.get("types") or ["window", "screenshot"])
+    types = set(raw.get("types") or ["window", "screenshot", "browser"])
+    url = rx("url_regex")
+    if raw.get("url_regex") and url is None:
+        return None
     return Rule(
         activity=activity,
         types=types,
@@ -95,6 +103,7 @@ def _compile(raw: dict[str, Any]) -> Rule | None:
         title=rx("title_regex"),
         title_exclude=rx("title_exclude"),
         cmd=rx("cmd_regex"),
+        url=url,
         subject=str(raw.get("subject") or ""),
     )
 
@@ -127,7 +136,7 @@ class Classifier:
         title = str(data.get("title") or "")
         cmd = str(data.get("cmd") or data.get("file") or "")
         for rule in self.rules:
-            hit = rule.match(type_, app, title, cmd)
+            hit = rule.match(type_, app, title, cmd, str(data.get("url") or ""))
             if hit:
                 return hit[0], hit[1][:120]
         return "other", ""

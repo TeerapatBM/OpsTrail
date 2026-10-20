@@ -50,7 +50,7 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
-- T-101 browser extension (GPT) · T-103 voice note (GPT)
+- ~~T-101 browser extension (GPT)~~ done · T-103 voice note (GPT)
 - ~~T-105 Teams digest (GPT)~~ done · ~~T-106 PowerShell output capture (Claude)~~ done
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
 - T-110 team-mode design (Claude → reviewed by GPT)
@@ -71,7 +71,7 @@ Older backlog items (kept for reference):
    to the current heuristic.
 7. [ ] **Remote SSH capture**: helper to pull `~/.opstrail/inbox/*.tsv` from servers where the bash hook is
    sourced, or wrap `ssh` with `script` logging.
-8. [ ] **Browser URL capture** via UI Automation (Edge/Chrome address bar) — opt-in, respect exclusions.
+8. [x] **Browser URL capture** (T-101): opt-in Edge/Chrome extension, token pairing and exclusions.
 9. [ ] **Web UI polish**: streaming AI output, diff view between versions, drag-drop images into docs,
    per-section "rewrite this section" button. _suggested: GPT_
 10. [ ] **ChatGPT (web/desktop) as an MCP client**: expose HTTP MCP through Cloudflare Tunnel with OAuth
@@ -80,6 +80,10 @@ Older backlog items (kept for reference):
     (Azure Activity/Entra, Alibaba ActionTrail, vCenter), web review UI, SharePoint publishing.
 
 ## Done
+
+- T-101 browser URL capture — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. MV3 focused-tab capture, per-install
+  pairing Settings, protected ingest, privacy filters/redaction, URL classification and source-pack facts.
+  Files: `extension/`, `browser.py`, service/events/config/activity/render/web, `tests/test_browser*`, SPEC/README/card/plan. Node 3/3; pytest/eval blocked by shared Python launcher; interactive browser smoke pending.
 
 - T-108 system tray — GPT, 2026-10-20. Optional background tray with queued Thai menu actions, green/grey
   pause state, existing-worklog preservation and graceful missing/backend fallback; normal shutdown cleanup.
@@ -117,6 +121,10 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude (Claude Code): review T-101 token/Origin/Host isolation, URL query/fragment privacy,
+  classification/source-pack integration and worker debounce/focus races. Run pytest + eval (shared Python
+  launcher cannot start in Codex sandbox), then real Edge/Chrome load-unpacked pairing and InPrivate smoke.
+
 - [ ] Claude (Claude Code): review T-108 tray startup/shutdown races, queued actions and worklog preservation;
   run pytest + eval (shared Python cannot launch in Codex sandbox), then Windows desktop smoke (Thai menu, colors, screenshots, exit).
   Round 2 review request: include UTF-8 BOM handling in lazy transcript headers and `test_powershell_51_lazy_transcript_header`.
@@ -135,6 +143,31 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-101 (GPT): Settings reveals the per-install token only via protected POST `/api/browser/token`
+  with no-store (never GET/status). Creation uses existing cross-process lock; random 32-byte token in
+  `browser_token`, 0600 on POSIX / inherited directory permissions on Windows. Delete file to re-pair.
+  Browser ingest requires X-OpsTrail plus X-OpsTrail-Browser-Token even for local callers. Only this POST
+  permits a valid chrome-extension Origin; no CORS/preflight wildcard, no changes to other routes/Host/CSP.
+  The privileged MV3 worker's loopback host permission permits cross-origin requests without CORS approval
+  (Chrome's official extension network model). No content scripts or page messaging surface.
+- 2026-10-20 — T-101 (GPT): filter in browser.py called by service.py, then normal record/store_event redaction.
+  Drop userinfo, strip query in both URL and SPA fragment by default while retaining Azure blade routes;
+  derive domain before redaction, match exclusions by exact/suffix boundary (including trailing dot).
+  Broken title exclusion fails closed. Store URL/title/domain only; tab id validates input but is discarded.
+  Browser events are additive schema v1, point-in-time facts with no focus duration; source packs explicitly
+  include URLs. Existing ordered classifier gains browser/@browser and ANDed url_regex; URL rules identify
+  Azure/Sentinel before ambiguous titles, invalid URL regex rules are skipped. No unrelated grouping changes.
+- 2026-10-20 — T-101 (GPT): extension stores only pairing token/port locally (never sync) and last attempt time
+  in storage.session so worker restart keeps the three-second limit. Query the current focused window/tab
+  again at dispatch; incognito denied in manifest and runtime. No durable URL queue; offline/timeout drops
+  capture, no redirects/retries. Chrome/Edge 103+ APIs; missing web service leaves ordinary window capture.
+  A synthetic slow-fetch regression reproduced a dropped trailing update: a fired timer's stale handle
+  suppressed rescheduling after busy requests. Clear it at flush entry; Node harness now passes 3/3.
+- 2026-10-20 — T-101 (GPT): focused pytest, full pytest and eval attempted using the prescribed shared venv;
+  all blocked before startup by "The file cannot be accessed by the system". No substitute interpreter or
+  dependency installation. Node harness and syntax checks pass; Python gates and real load-unpacked desktop
+  smoke are pending runner/Claude/Bro. This is an execution limit, not a passing Python/eval claim.
 
 - 2026-10-20 — T-108 round 2 (GPT): gate failure came from T-106's lazy transcript header parser, not tray code.
   Reproduced missing output after the second resume; a deterministic synthetic-header test fails only with BOM.

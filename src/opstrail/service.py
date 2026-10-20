@@ -100,6 +100,18 @@ class OpsTrail:
     def record(self, type_: str, data: dict[str, Any], source: str = "cli", **kw: Any) -> int | None:
         return store_event(self.cfg, self.store, make_event(self.cfg, type_, data, source=source, **kw))
 
+    def record_browser(self, payload: dict[str, Any]) -> dict[str, Any]:
+        from opstrail.browser import capture_data
+        from opstrail.events import parse_ts
+
+        try:
+            ts = parse_ts(payload.get("ts"), self.cfg.tz)
+            data = capture_data(self.cfg, payload)
+        except (ValueError, TypeError, OverflowError, OSError) as exc:
+            raise OpsTrailError("ข้อมูล browser ไม่ถูกต้อง (URL, title, tab_id, ts หรือ incognito)") from exc
+        eid = self.record("browser", data, source="browser-extension", ts=ts) if data else None
+        return {"stored": eid is not None, "event_id": eid}
+
     # ---------------------------------------------------------------- status
     def status(self) -> dict[str, Any]:
         today = self.cfg.today()

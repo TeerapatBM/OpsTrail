@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import re
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -30,11 +31,13 @@ class LocalOnly:
     * Host header must be a loopback name (blocks DNS-rebinding attacks).
     * State-changing requests need `X-OpsTrail: 1` (custom header → cross-site forms/fetch can't send it
       without a CORS preflight, which we never approve) and, when present, a same-origin Origin header.
+      Only browser ingest permits an extension origin, authenticated with its per-install token.
     * Hardened response headers (CSP, no framing, no cross-origin embedding of screenshots).
     """
 
-    def __init__(self, app: Any, port: int, extra_hosts: tuple[str, ...] = ()):
+    def __init__(self, app: Any, port: int, extra_hosts: tuple[str, ...] = (), cfg: Any = None):
         self.app = app
+        self.cfg = cfg
         self.port = port
         self.hosts = {h for h in LOOPBACK} | {f"{h}:{port}" for h in LOOPBACK} | set(extra_hosts)
         self.origins = {f"http://{h}:{port}" for h in LOOPBACK} | {f"http://{h}" for h in extra_hosts}
@@ -50,7 +53,15 @@ class LocalOnly:
             return
         if method not in ("GET", "HEAD"):
             origin = headers.get("origin")
-            if headers.get("x-opstrail") != "1" or (origin and origin not in self.origins):
+            browser_post = scope.get("path") == "/api/ingest/browser" and method == "POST"
+            extension = bool(origin and re.fullmatch(r"chrome-extension://[a-p]{32}", origin))
+            from opstrail.browser import valid_token
+
+            paired = browser_post and self.cfg is not None and valid_token(
+                self.cfg, headers.get("x-opstrail-browser-token", ""))
+            if (headers.get("x-opstrail") != "1" or
+                    (browser_post and not paired) or
+                    (origin and origin not in self.origins and not (extension and paired))):
                 await JSONResponse({"error": "cross-site request blocked"}, status_code=403)(scope, receive, send)
                 return
 
@@ -144,6 +155,17 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
 
     def capture(r: Request, b: dict) -> Any:
         return ot.set_paused(bool(b.get("paused")))
+
+    def browser_token(r: Request, b: dict) -> Any:
+        from opstrail.browser import pairing_token
+
+        try:
+            return JSONResponse({"token": pairing_token(ot.cfg)}, headers={"Cache-Control": "no-store"})
+        except (OSError, ValueError):
+            raise OpsTrailError("ไม่สามารถเปิด browser token ได้ กรุณาลองใหม่") from None
+
+    def browser_ingest(r: Request, b: dict) -> Any:
+        return ot.record_browser(b)
 
     # --- activity
     def day(r: Request, b: dict) -> Any:
@@ -313,6 +335,8 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         Route("/api/health", health),
         Route("/api/status", api(status)),
         Route("/api/capture", api(capture, body=True), methods=["POST"]),
+        Route("/api/browser/token", api(browser_token, body=True), methods=["POST"]),
+        Route("/api/ingest/browser", api(browser_ingest, body=True), methods=["POST"]),
         Route("/api/day/{date}", api(day)),
         Route("/api/day/{date}/recap", api(make_recap, body=True), methods=["POST"]),
         Route("/api/timeline", api(timeline)),
@@ -348,7 +372,7 @@ def create_app(svc: OpsTrail | None = None, *, port: int | None = None, extra_ho
         Route("/api/style/{template}/learn", api(style_learn, body=True), methods=["POST"]),
         Mount("/static", app=StaticFiles(directory=str(STATIC)), name="static"),
     ]
-    return Starlette(routes=routes, middleware=[Middleware(LocalOnly, port=web_port, extra_hosts=extra_hosts)])
+    return Starlette(routes=routes, middleware=[Middleware(LocalOnly, port=web_port, extra_hosts=extra_hosts, cfg=ot.cfg)])
 
 
 def serve(svc: OpsTrail | None = None, port: int | None = None, *, in_thread: bool = False) -> Any:

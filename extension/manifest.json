@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "OpsTrail Browser Capture",
+  "version": "0.1.0",
+  "minimum_chrome_version": "103",
+  "description": "บันทึก URL ของแท็บที่ใช้งานไปยัง OpsTrail ในเครื่องนี้",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "options_page": "options.html",
+  "incognito": "not_allowed",
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'"}
+}
