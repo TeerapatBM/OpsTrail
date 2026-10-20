@@ -31,6 +31,11 @@ function prettyKey(combo) {
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function hashParams() { const q = location.hash.split("?")[1] || ""; return new URLSearchParams(q); }
 
+function icon(name) {
+  const paths = { previous: "m14 5-7 7 7 7", next: "m10 5 7 7-7 7", download: "M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4" };
+  return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.download}"/></svg>`;
+}
+
 async function api(path, opts = {}) {
   const init = { method: opts.method || "GET", headers: {} };
   if (opts.body !== undefined) {
@@ -153,9 +158,22 @@ function lightbox(src) {
 function setView(html) {
   const v = $("#view");
   v.innerHTML = html;
+  labelTables(v);
+  theme.sync();
   v.focus({ preventScroll: true });
   window.scrollTo(0, 0);
   return v;
+}
+
+function labelTables(root) {
+  $$("table.list", root).forEach((table) => {
+    const headings = $$("thead th", table).map((th) => th.textContent);
+    $$("tbody tr", table).forEach((row) => {
+      Array.from(row.cells).forEach((cell, i) => {
+        if (cell.colSpan === 1 && headings[i]) cell.dataset.label = headings[i];
+      });
+    });
+  });
 }
 
 async function copyText(text) {
@@ -271,7 +289,7 @@ async function refreshStatus() {
     const agent = st.agent_running
       ? `<span class="dot ok"></span>agent ทำงานอยู่`
       : `<span class="dot bad"></span>agent ไม่ทำงาน`;
-    $("#agent-status").innerHTML = `${agent}<br><span class="${st.capturing ? "" : "muted"}">${st.capturing ? "● กำลังบันทึก" : "⏸ หยุดบันทึกชั่วคราว"}</span>`;
+    $("#agent-status").innerHTML = `${agent}<br><span class="${st.capturing ? "" : "muted"}">${st.capturing ? "กำลังบันทึก" : "หยุดบันทึกชั่วคราว"}</span>`;
     const btn = $("#capture-toggle");
     btn.textContent = st.capturing ? "หยุดบันทึกชั่วคราว" : "บันทึกต่อ";
     btn.className = "btn small" + (st.capturing ? "" : " primary");
@@ -305,13 +323,13 @@ async function renderDay(date) {
   const v = setView(`
     <div class="page-head">
       <div class="row">
-        <a class="btn small" href="#/day/${shiftDate(date, -1)}" title="วันก่อน">◀</a>
+        <a class="btn small" href="#/day/${shiftDate(date, -1)}" aria-label="วันก่อน" title="วันก่อน">${icon("previous")}</a>
         <div><h1>${esc(thaiDate(date))}</h1><div class="muted small">${date === today() ? "วันนี้" : date}</div></div>
-        <a class="btn small" href="#/day/${shiftDate(date, 1)}" title="วันถัดไป">▶</a>
-        <input type="date" id="pick" value="${date}">
+        <a class="btn small" href="#/day/${shiftDate(date, 1)}" aria-label="วันถัดไป" title="วันถัดไป">${icon("next")}</a>
+        <input type="date" id="pick" aria-label="วันที่ของงาน" value="${date}">
       </div>
       <div class="row">
-        ${data.episodes.length && state.llm && state.llm.ready ? `<button class="btn" id="ai-titles" title="ให้ AI ตั้งชื่องานที่ยังเป็นชื่ออัตโนมัติ">✨ ตั้งชื่องานด้วย AI</button>` : ""}
+        ${data.episodes.length && state.llm && state.llm.ready ? `<button class="btn" id="ai-titles" title="ให้ AI ตั้งชื่องานที่ยังเป็นชื่ออัตโนมัติ">ตั้งชื่องานด้วย AI</button>` : ""}
         ${recapBtn}
         <button class="btn primary" id="mk-recap">${data.recap ? "อัปเดต" : "สร้าง"} Daily worklog</button>
       </div>
@@ -407,10 +425,10 @@ function episodeCard(ep, date) {
   ].filter(Boolean).join(" · ");
   el.innerHTML = `
     <div class="ep-head">
-      <input type="checkbox" class="ep-sel" value="${ep.id}" aria-label="เลือกงาน">
+      <label class="ep-select-target"><input type="checkbox" class="ep-sel" value="${ep.id}" aria-label="เลือกงาน"></label>
       <div class="ep-time">${esc(ep.time)}<span class="muted">${esc(ep.active)}</span></div>
       <div>
-        <input class="ep-title" value="${esc(ep.title)}" title="คลิกเพื่อแก้ชื่องาน">
+        <input class="ep-title" value="${esc(ep.title)}" aria-label="ชื่องาน" title="คลิกเพื่อแก้ชื่องาน">
         <div class="ep-meta">${actBadge} ${tags} ${meta}${ep.chats && ep.chats.length ? ` · คุยกับ ${esc(ep.chats.join(", "))}` : ""}</div>
       </div>
       <div class="row">
@@ -448,7 +466,7 @@ function renderEpisodeDetail(box, d, date) {
       <h4 style="margin-top:12px">หน้าต่าง/หน้าเว็บที่ใช้</h4>
       ${d.windows.length ? `<ul class="notes small">${d.windows.map((w) => `<li><span class="muted">${esc(w.focus)}</span> ${esc(w.window)}</li>`).join("")}</ul>` : `<div class="muted small">-</div>`}
       <h4 style="margin-top:12px">แท็ก</h4>
-      <div class="row"><input id="tags-${d.id}" value="${esc((d.tags || []).join(", "))}" placeholder="เช่น Splunk, ลูกค้า X"><button class="btn small" data-act="tags">บันทึกแท็ก</button></div>
+      <div class="row"><input id="tags-${d.id}" aria-label="แท็กของงาน" value="${esc((d.tags || []).join(", "))}" placeholder="เช่น Splunk, ลูกค้า X"><button class="btn small" data-act="tags">บันทึกแท็ก</button></div>
     </div>
     <div>
       <h4>คำสั่ง (${cmds.length})</h4>
@@ -481,6 +499,7 @@ async function renderTimeline(box, date) {
         <td>${e.episode_id ? "#" + e.episode_id : ""}</td></tr>`).join("")}
       </tbody></table></div>
       ${tl.total_events > tl.shown ? `<div class="muted small">แสดง ${tl.shown} จาก ${tl.total_events} รายการล่าสุด</div>` : ""}`;
+    labelTables(box);
   } catch (e) { box.innerHTML = esc(e.message); }
 }
 
@@ -516,8 +535,8 @@ async function renderDocs() {
   const v = setView(`
     <div class="page-head"><h1>เอกสาร</h1>
       <div class="row">
-        <select id="f-tpl"><option value="">ทุกประเภท</option>${tpls.map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join("")}</select>
-        <select id="f-status"><option value="">ทุกสถานะ</option><option>draft</option><option>review</option><option>final</option><option>archived</option></select>
+        <select id="f-tpl" aria-label="กรองประเภทเอกสาร"><option value="">ทุกประเภท</option>${tpls.map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join("")}</select>
+        <select id="f-status" aria-label="กรองสถานะเอกสาร"><option value="">ทุกสถานะ</option><option>draft</option><option>review</option><option>final</option><option>archived</option></select>
         <button class="btn primary" id="new-doc">+ เอกสารใหม่</button>
       </div></div>
     <div class="card"><table class="list"><thead><tr><th>ชื่อเอกสาร</th><th>ประเภท</th><th>สถานะ</th><th>เวอร์ชัน</th><th>แก้ไขล่าสุด</th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -530,6 +549,7 @@ async function renderDocs() {
       <td>${esc(tplTitle[d.template] || d.template)}</td>
       <td>${statusBadge(d.status)}</td><td>v${d.latest_version}</td><td class="muted">${esc(fmtTime(d.updated_at))}</td></tr>`).join("")
       : `<tr><td colspan="5" class="empty">ยังไม่มีเอกสาร</td></tr>`;
+    labelTables(v);
   };
   $("#f-tpl", v).addEventListener("change", draw);
   $("#f-status", v).addEventListener("change", draw);
@@ -553,22 +573,22 @@ async function renderDoc(id) {
   const llmReady = state.llm && state.llm.ready;
   const v = setView(`
     <div class="doc-head">
-      <a class="btn small" href="#/docs">←</a>
-      <input class="doc-title" id="title" value="${esc(d.title)}">
+      <a class="btn small" href="#/docs" aria-label="กลับไปเอกสาร">${icon("previous")}</a>
+      <input class="doc-title" id="title" aria-label="ชื่อเอกสาร" value="${esc(d.title)}">
       <span class="badge accent">${esc(tpl ? tpl.title : d.template)}</span>
-      <select id="status">${["draft", "review", "final", "archived"].map((s) => `<option value="${s}" ${s === d.status ? "selected" : ""}>${s}</option>`).join("")}</select>
-      <select id="ver"></select>
+      <select id="status" aria-label="สถานะเอกสาร">${["draft", "review", "final", "archived"].map((s) => `<option value="${s}" ${s === d.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <select id="ver" aria-label="เวอร์ชันเอกสาร"></select>
       <button class="btn small" id="diff-btn">เทียบเวอร์ชัน</button>
     </div>
     <div class="card toolbar">
-      <input class="ai-instr" id="instr" placeholder="คำสั่งเพิ่มเติมถึง AI (ไม่บังคับ) เช่น “สั้นลง เน้นขั้นตอน”, “เพิ่มส่วน rollback”">
-      <button class="btn primary" id="ai">✨ ${d.version ? "ให้ AI ปรับ" : "ให้ AI เขียน"}</button>
+      <input class="ai-instr" id="instr" aria-label="คำสั่งเพิ่มเติมถึง AI" placeholder="คำสั่งเพิ่มเติมถึง AI (ไม่บังคับ) เช่น “สั้นลง เน้นขั้นตอน”, “เพิ่มส่วน rollback”">
+      <button class="btn primary" id="ai">${d.version ? "ให้ AI ปรับ" : "ให้ AI เขียน"}</button>
       <button class="btn" id="copy">Copy prompt</button>
       <button class="btn" id="paste">Paste ผลลัพธ์</button>
       <span class="sep"></span>
       <button class="btn" id="save">บันทึก (Ctrl+S)</button>
-      <button class="btn" id="dl-docx">⬇ .docx</button>
-      <button class="btn" id="dl-md">⬇ .md</button>
+      <button class="btn" id="dl-docx">${icon("download")} .docx</button>
+      <button class="btn" id="dl-md">${icon("download")} .md</button>
       <button class="btn" id="add-src">+ เพิ่มงาน</button>
       <button class="btn" id="fc-btn" title="หา IP / version / hostname ในเอกสารที่ไม่มีในข้อมูลที่บันทึก">ตรวจข้อเท็จจริง</button>
       <button class="btn" id="review-btn">ให้ AI ตรวจ</button>
@@ -588,7 +608,7 @@ async function renderDoc(id) {
     <div id="verinfo" class="muted small" style="margin-bottom:6px"></div>
     <div class="tabs"><button class="btn small primary" data-pane="edit">แก้ไข</button><button class="btn small" data-pane="preview">ตัวอย่าง</button></div>
     <div class="panes show-edit" id="panes">
-      <div class="editor-wrap"><textarea class="editor" id="md" spellcheck="false" placeholder="ยังไม่มีเนื้อหา — กด “ให้ AI เขียน” หรือพิมพ์เอง"></textarea></div>
+      <div class="editor-wrap"><textarea class="editor" id="md" aria-label="เนื้อหา Markdown" spellcheck="false" placeholder="ยังไม่มีเนื้อหา — กด “ให้ AI เขียน” หรือพิมพ์เอง"></textarea></div>
       <div class="card preview md" id="preview"></div>
     </div>
     <div class="card pad sources"><h2>แหล่งข้อมูลของเอกสารนี้</h2><div id="srcs"></div></div>`);
@@ -612,7 +632,7 @@ async function renderDoc(id) {
     $("#verinfo", v).innerHTML = doc.version && doc.version !== latest
       ? `<span class="badge warn">กำลังดู v${doc.version} (ไม่ใช่ล่าสุด)</span> กด “บันทึก” เพื่อใช้เวอร์ชันนี้เป็นเวอร์ชันใหม่`
       : cur ? `v${cur.version}${cur.change_note ? " — " + esc(cur.change_note) : ""}` : "";
-    $("#ai", v).textContent = doc.versions.length ? "✨ ให้ AI ปรับ" : "✨ ให้ AI เขียน";
+    $("#ai", v).textContent = doc.versions.length ? "ให้ AI ปรับ" : "ให้ AI เขียน";
     $("#diff-btn", v).disabled = doc.versions.length < 2;
     $("#version-diff", v).hidden = true;
     $("#srcs", v).innerHTML = doc.episodes.length
@@ -780,12 +800,12 @@ async function renderDoc(id) {
       if (!(await ensureSaved())) return;
       const r = await api(`/api/docs/${id}/prompt?instruction=${encodeURIComponent($("#instr", v).value)}`);
       if (await copyText(r.prompt)) toast(`คัดลอก prompt แล้ว (${r.prompt.length.toLocaleString()} ตัวอักษร) — วางใน ChatGPT/Claude ได้เลย`);
-      else await modal(`<h2>Prompt</h2><textarea readonly>${esc(r.prompt)}</textarea>`, { hideOk: true, cancel: "ปิด" });
+      else await modal(`<h2>Prompt</h2><textarea aria-label="Prompt สำหรับคัดลอก" readonly>${esc(r.prompt)}</textarea>`, { hideOk: true, cancel: "ปิด" });
     } catch (e) { fail(e); }
   });
   $("#paste", v).addEventListener("click", async () => {
     const r = await modal(`<h2>วางผลลัพธ์จาก ChatGPT / Claude</h2>
-      <textarea name="md" required placeholder="วาง markdown ทั้งเอกสารที่นี่"></textarea>
+      <textarea name="md" aria-label="ผลลัพธ์ Markdown" required placeholder="วาง markdown ทั้งเอกสารที่นี่"></textarea>
       <label class="field">ที่มา<input name="note" value="วางจาก ChatGPT/Claude"></label>`, { ok: "บันทึกเป็นเวอร์ชันใหม่" });
     if (!r || !r.md.trim()) return;
     let md = r.md.trim();
@@ -852,8 +872,8 @@ function renderSearch() {
   const q0 = hashParams().get("q") || "";
   const v = setView(`
     <div class="page-head"><h1>ค้นหา</h1></div>
-    <input id="q" style="width:100%;font-size:16px;padding:10px 14px" placeholder="ค้นจากคำสั่ง ชื่อหน้าต่าง โน้ต และเอกสาร เช่น “syslog”, “splunk add forward-server”" value="${esc(q0)}">
-    <div id="res" class="stack" style="margin-top:14px"></div>`);
+    <label class="field">คำค้น<input id="q" type="search" style="width:100%;font-size:16px;padding:10px 14px" placeholder="ค้นคำสั่ง ชื่อหน้าต่าง โน้ต และเอกสาร" value="${esc(q0)}"></label>
+    <div id="res" class="stack" aria-live="polite" style="margin-top:14px"><div class="card empty">พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นจากงานที่บันทึกไว้</div></div>`);
   const run = debounce(async () => {
     const q = $("#q", v).value.trim();
     const box = $("#res", v);
@@ -864,7 +884,8 @@ function renderSearch() {
         <div class="card pad"><h2>เอกสาร (${r.docs.length})</h2>
           ${r.docs.length ? r.docs.map((d) => `<div style="margin:8px 0"><a href="#/docs/${d.session_id}"><b>${esc(d.title)}</b></a><div class="muted small">${esc(d.snippet || "")}</div></div>`).join("") : `<div class="muted">ไม่พบ</div>`}</div>
         <div class="card pad"><h2>กิจกรรม (${r.activity.length})</h2>
-          ${r.activity.length ? `<table class="list"><tbody>${r.activity.map((a) => `<tr><td class="muted"><a href="#/day/${esc(a.date)}">${esc(a.date)}</a> ${esc(a.time)}</td><td><span class="badge">${esc(a.type)}</span></td><td class="mono">${esc(a.text)}</td></tr>`).join("")}</tbody></table>` : `<div class="muted">ไม่พบ</div>`}</div>`;
+          ${r.activity.length ? `<table class="list"><thead><tr><th>วัน / เวลา</th><th>ประเภท</th><th>รายละเอียด</th></tr></thead><tbody>${r.activity.map((a) => `<tr><td class="muted"><a href="#/day/${esc(a.date)}">${esc(a.date)}</a> ${esc(a.time)}</td><td><span class="badge">${esc(a.type)}</span></td><td class="mono">${esc(a.text)}</td></tr>`).join("")}</tbody></table>` : `<div class="muted">ไม่พบ</div>`}</div>`;
+      labelTables(box);
     } catch (e) { box.innerHTML = esc(e.message); }
   }, 250);
   $("#q", v).addEventListener("input", run);
@@ -884,6 +905,13 @@ async function renderSettings() {
   const tplList = await templates();
   const v = setView(`
     <div class="page-head"><h1>ตั้งค่า</h1></div>
+    <section class="card pad stack settings-theme">
+      <h2>หน้าตาและธีม</h2>
+      <p class="muted small">เลือกธีมที่อ่านสบายตา อัตโนมัติจะเปลี่ยนตามระบบ และจำค่าที่เลือกในเบราว์เซอร์นี้</p>
+      <label class="field">ธีม<select id="theme-settings" data-theme-select>
+        <option value="auto">อัตโนมัติ</option><option value="light">สว่าง</option><option value="dark">มืด</option>
+      </select></label>
+    </section>
     <div class="card pad stack" style="margin-bottom:14px">
       <h2>สรุปงานประจำวันไป Teams</h2>
       <div class="muted small">เปิดใช้แล้วจะส่ง digest อัตโนมัติตอนสร้าง recap รวมถึง recap ย้อนหลังของเมื่อวาน ส่งเฉพาะชื่องานและเวลา ชื่ออัตโนมัติและหัวข้อประชุมจะใช้เลขงานแทนเพื่อป้องกันข้อมูลจาก command/window title</div>
@@ -914,7 +942,7 @@ async function renderSettings() {
         <label class="field" data-for="anthropic openai">Model<input id="model" list="models" placeholder=""></label>
         <label class="field" data-for="anthropic openai">Base URL (ไม่บังคับ)<input id="base_url" placeholder=""></label>
         <label class="field" data-for="anthropic">Workspace ID (ใส่เมื่อ key ใช้ได้หลาย workspace)<input id="anthropic_workspace_id" placeholder="wrkspc_… — ดูได้ที่ Claude Console → Settings → Workspaces"></label>
-        <label class="field" data-for="azure">Azure endpoint<input id="azure_endpoint" placeholder="https://<resource>.openai.azure.com"></label>
+        <label class="field" data-for="azure">Azure endpoint<input id="azure_endpoint" placeholder="วาง endpoint จาก Azure Portal (HTTPS)"></label>
         <label class="field" data-for="azure">Deployment name<input id="azure_deployment" placeholder="เช่น gpt-4o-docs"></label>
         <label class="field" data-for="azure">API version<input id="azure_api_version"></label>
         <label class="field" data-for="anthropic openai azure">API key<input id="api_key" type="password" autocomplete="off"></label>
@@ -934,12 +962,12 @@ async function renderSettings() {
       <div class="muted small">ทุกครั้งที่คุณแก้ draft ของ AI แล้วกดบันทึก ระบบจะเก็บส่วนที่แก้ไว้ กด “เรียนรู้จากการแก้ไข” เพื่อสรุปเป็นกติกา
         ที่ AI จะทำตามในครั้งถัดไป (แก้เองได้)</div>
       <div class="row">
-        <select id="st-tpl">${tplList.map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join("")}</select>
+        <select id="st-tpl" aria-label="ประเภทเอกสารสำหรับสไตล์">${tplList.map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join("")}</select>
         <span id="st-info" class="muted small"></span>
       </div>
-      <textarea id="st-text" style="min-height:140px;width:100%" placeholder="- เช่น ใช้หัวข้อสั้น ไม่เกิน 6 คำ&#10;- ทุกขั้นตอนต้องมีผลลัพธ์ที่คาดหวัง"></textarea>
+      <textarea id="st-text" aria-label="กติกาสไตล์การเขียน" style="min-height:140px;width:100%" placeholder="- เช่น ใช้หัวข้อสั้น ไม่เกิน 6 คำ&#10;- ทุกขั้นตอนต้องมีผลลัพธ์ที่คาดหวัง"></textarea>
       <div class="row"><button class="btn primary" id="st-save">บันทึกสไตล์</button>
-        <button class="btn" id="st-learn">✨ เรียนรู้จากการแก้ไข</button></div>
+        <button class="btn" id="st-learn">เรียนรู้จากการแก้ไข</button></div>
     </div>
     <div class="card pad" style="margin-top:14px">
       <h2>การบันทึกกิจกรรม</h2>
@@ -961,7 +989,7 @@ async function renderSettings() {
     <button class="btn" id="browser-pair">แสดง token</button>
     <input id="browser-token" readonly aria-label="Browser token" hidden>
     <button class="btn" id="browser-copy" hidden>คัดลอก token</button>`;
-  v.prepend(browserCard);
+  v.appendChild(browserCard);
   $("#browser-pair", v).addEventListener("click", async () => {
     try {
       const result = await api("/api/browser/token", { body: {} });
@@ -1039,7 +1067,7 @@ async function renderSettings() {
     const p = $("#provider", v).value;
     $$("[data-for]", v).forEach((el) => el.classList.toggle("hidden", !el.dataset.for.split(" ").includes(p)));
     $("#model", v).placeholder = (s.default_models && s.default_models[p]) || "";
-    $("#base_url", v).placeholder = p === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1  หรือ  http://localhost:11434/v1";
+    $("#base_url", v).placeholder = p === "anthropic" ? "เว้นว่างเพื่อใช้ Anthropic endpoint" : "เว้นว่างเพื่อใช้ OpenAI หรือวาง URL ของ Ollama / LM Studio";
   };
   $("#provider", v).addEventListener("change", toggle);
   fill(s);
@@ -1105,7 +1133,11 @@ function route() {
   for (const [re, fn, name] of routes) {
     const m = re.exec(h);
     if (m) {
-      $$("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === name));
+      $$("#nav a").forEach((a) => {
+        a.classList.toggle("active", a.dataset.route === name);
+        if (a.dataset.route === name) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
       Promise.resolve(fn(m)).catch(fail);
       return;
     }
@@ -1114,6 +1146,15 @@ function route() {
 }
 
 window.addEventListener("hashchange", route);
+document.addEventListener("change", (e) => {
+  if (e.target.matches("[data-theme-select]")) theme.set(e.target.value);
+});
+$(".skip-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  $("#view").focus();
+  $("#view").scrollIntoView();
+});
+theme.sync();
 window.addEventListener("beforeunload", (e) => { if (state.dirty || state.generating) { e.preventDefault(); e.returnValue = ""; } });
 refreshStatus();
 setInterval(refreshStatus, 15000);

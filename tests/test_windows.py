@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -14,6 +15,165 @@ import pytest
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_ui_snapshot_launcher_is_ascii_and_parses():
+    path = REPO / 'scripts/ui-snapshots.ps1'
+    path.read_bytes().decode('ascii')
+    # Parse without executing: no browser, Python launcher, real profile or display needed.
+    quoted = str(path).replace("'", "''")
+    script = ("$tokens=$null; $errors=$null; "
+              f"[System.Management.Automation.Language.Parser]::ParseFile('{quoted}', "
+              "[ref]$tokens, [ref]$errors) | Out-Null; "
+              "if ($errors.Count) { $errors | Out-String | Write-Error; exit 1 }")
+    subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                   check=True, timeout=15, capture_output=True)
+
+
+@pytest.mark.skipif(shutil.which("powershell") is None, reason="Windows PowerShell 5.1 not found")
+def test_ui_snapshot_launcher_matrix_and_environment(tmp_path):
+    """Run the launcher with fake processes; no browser or real user home."""
+    launcher = str(REPO / 'scripts/ui-snapshots.ps1').replace("'", "''")
+    output = str(tmp_path / 'screens').replace("'", "''")
+    python = sys.executable.replace("'", "''")
+    script = r'''
+$ErrorActionPreference = 'Stop'
+$env:OPSTRAIL_HOME = 'sentinel-home'
+$env:PYTHONPATH = 'sentinel-path'
+$env:OPSTRAIL_NO_CAPTURE = 'sentinel-capture'
+$global:shots = 0
+$global:phones = 0
+$global:stopped = $false
+$global:originalNewObject = Get-Command New-Object -CommandType Cmdlet
+# Fake only the browser transport; execute the real CDP sequencing and message framing.
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Net.WebSockets;
+public class SnapshotSocket {
+    public static List<string> Commands = new List<string>();
+    public static int Disposed;
+    string reply;
+    int offset;
+    bool eventPending;
+    public Task ConnectAsync(Uri uri, CancellationToken token) { return Task.FromResult(0); }
+    public Task SendAsync(ArraySegment<byte> bytes, WebSocketMessageType kind, bool end, CancellationToken token) {
+        var command = Encoding.UTF8.GetString(bytes.Array, bytes.Offset, bytes.Count);
+        Commands.Add(command);
+        var id = System.Text.RegularExpressions.Regex.Match(command, "\"id\":(\\d+)").Groups[1].Value;
+        string result = "{}";
+        if (command.Contains("Runtime.evaluate")) result = "{\"result\":{\"value\":true}}";
+        if (command.Contains("Page.captureScreenshot")) result = "{\"data\":\"" + Convert.ToBase64String(new byte[2048]) + "\"}";
+        reply = "{\"id\":" + id + ",\"result\":" + result + "}";
+        offset = 0;
+        eventPending = true;
+        return Task.FromResult(0);
+    }
+    public Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken token) {
+        if (eventPending) {
+            var ev = Encoding.UTF8.GetBytes("{\"method\":\"Page.frameNavigated\"}");
+            Array.Copy(ev, 0, buffer.Array, buffer.Offset, ev.Length);
+            eventPending = false;
+            return Task.FromResult(new WebSocketReceiveResult(ev.Length, WebSocketMessageType.Text, true));
+        }
+        var data = Encoding.UTF8.GetBytes(reply);
+        int count = Math.Min(512, data.Length - offset);
+        Array.Copy(data, offset, buffer.Array, buffer.Offset, count);
+        offset += count;
+        return Task.FromResult(new WebSocketReceiveResult(count, WebSocketMessageType.Text, offset == data.Length));
+    }
+    public void Dispose() { Disposed++; }
+}
+'@
+function New-Object {
+    param($TypeName, [Parameter(ValueFromRemainingArguments=$true)]$ArgumentList)
+    if ($TypeName -eq 'Net.WebSockets.ClientWebSocket') { return [SnapshotSocket]::new() }
+    & $global:originalNewObject $TypeName @ArgumentList
+}
+function Invoke-RestMethod {
+    param($Uri, $TimeoutSec)
+    if ($Uri -notlike 'http://127.0.0.1:*/json/list') { throw 'Non-loopback DevTools' }
+    # Invoke-RestMethod returns a JSON array as a single pipeline object in PowerShell 5.1.
+    return ,@([pscustomobject]@{ type = 'service_worker'; webSocketDebuggerUrl = 'ws://127.0.0.1:9222/devtools/worker/1' },
+              [pscustomobject]@{ type = 'page'; webSocketDebuggerUrl = 'ws://127.0.0.1:9222/devtools/page/1' })
+}
+$global:originalTestPath = Get-Command Test-Path -CommandType Cmdlet
+function Test-Path {
+    param([string]$LiteralPath)
+    if ($LiteralPath -like '*\msedge.exe') { return $true }
+    & $global:originalTestPath -LiteralPath $LiteralPath
+}
+function Invoke-WebRequest { return @{ StatusCode = 200 } }
+function Stop-Process { $global:stopped = $true }
+function Start-Process {
+    param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru,
+          $RedirectStandardOutput, $RedirectStandardError)
+    if ($WindowStyle -ne 'Hidden') { throw 'Visible helper' }
+    if ($ArgumentList -contains '--home') {
+        if ($env:OPSTRAIL_HOME -notlike '*ui-snapshots-*\home') { throw 'Home isolation lost' }
+        $index = [Array]::IndexOf($ArgumentList, '--ready')
+        $ready = $ArgumentList[$index + 1].Trim('"')
+        '{"date":"2026-10-19","session_id":7}' | Set-Content -LiteralPath $ready -Encoding ASCII
+        return [pscustomobject]@{ HasExited = $false; Id = 1234567 }
+    }
+    if (-not ($ArgumentList -contains '--headless')) { throw 'Missing headless' }
+    if ($ArgumentList -contains '--window-size=390,844') { throw 'Phone needs device emulation, not window cropping' }
+    if ($ArgumentList -contains '--remote-debugging-port=0') {
+        if (-not ($ArgumentList -contains '--remote-debugging-address=127.0.0.1')) { throw 'DevTools not loopback' }
+        if (-not ($ArgumentList -contains 'about:blank')) { throw 'Navigation before emulation' }
+        if (@($ArgumentList | Where-Object { $_ -like '--screenshot=*' }).Count) { throw 'Phone uses window screenshot' }
+        $profileArg = @($ArgumentList | Where-Object { $_ -like '--user-data-dir=*' })[0]
+        $isolatedProfile = $profileArg.Substring(16).Trim('"')
+        New-Item -ItemType Directory -Path $isolatedProfile | Out-Null
+        '9222' | Set-Content -LiteralPath (Join-Path $isolatedProfile 'DevToolsActivePort') -Encoding ASCII
+        $global:phones++
+        $proc = [pscustomobject]@{ HasExited = $false }
+        $proc | Add-Member ScriptMethod Kill { $this.HasExited = $true }
+        $proc | Add-Member ScriptMethod WaitForExit { param($ms) return $true }
+        return $proc
+    }
+    $shot = @($ArgumentList | Where-Object { $_ -like '--screenshot=*' })[0].Substring(13).Trim('"')
+    if ($shot -like '*-dark-*' -and -not ($ArgumentList -contains '--force-dark-mode')) { throw 'Missing dark flag' }
+    if (-not @($ArgumentList | Where-Object { $_ -like '--user-data-dir=*ui-snapshots-*' }).Count) { throw 'Real browser profile' }
+    [IO.File]::WriteAllBytes($shot, (New-Object byte[] 2048))
+    $global:shots++
+    $proc = [pscustomobject]@{}
+    $proc | Add-Member ScriptMethod WaitForExit { param($ms) return $true }
+    return $proc
+}
+'''
+    script += f"\n& '{launcher}' -Python '{python}' -OutputDirectory '{output}'\n"
+    script += r'''
+if ($global:shots -ne 12 -or $global:phones -ne 4) { throw "Wrong matrix: $global:shots desktop, $global:phones phone" }
+if ([SnapshotSocket]::Disposed -ne 4) { throw 'Phone sockets not disposed' }
+$commands = @([SnapshotSocket]::Commands | ForEach-Object { $_ | ConvertFrom-Json })
+for ($i = 0; $i -lt 4; $i++) {
+    $metrics, $navigate, $ready, $capture = $commands[($i * 4)..($i * 4 + 3)]
+    if ($metrics.method -ne 'Emulation.setDeviceMetricsOverride' -or $metrics.params.width -ne 390 -or
+        $metrics.params.height -ne 844 -or $metrics.params.deviceScaleFactor -ne 1 -or
+        $metrics.params.mobile -ne $true) { throw 'Wrong phone metrics' }
+    if ($navigate.method -ne 'Page.navigate' -or $navigate.params.url -notlike 'http://127.0.0.1:*/?snapshot_theme=*') { throw 'Wrong phone navigation' }
+    if ($ready.method -ne 'Runtime.evaluate' -or $ready.params.expression -notlike '*innerWidth === 390*' -or
+        $ready.params.expression -notlike '*scrollWidth <= 390*') { throw 'Missing render/width wait' }
+    if ($capture.method -ne 'Page.captureScreenshot' -or $capture.params.captureBeyondViewport -ne $false) { throw 'Wrong screenshot method' }
+}
+if (-not $global:stopped) { throw 'Server not stopped' }
+if ($env:OPSTRAIL_HOME -ne 'sentinel-home' -or $env:PYTHONPATH -ne 'sentinel-path' -or
+    $env:OPSTRAIL_NO_CAPTURE -ne 'sentinel-capture') { throw 'Environment not restored' }
+'''
+    result = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len(list((tmp_path / 'screens').glob('*.png'))) == 16
+    manifest = json.loads((tmp_path / 'screens/manifest.json').read_text(encoding='ascii'))
+    assert manifest['source'] == 'evals/days (synthetic only)'
+    assert set(manifest['files']) == {p.name for p in (tmp_path / 'screens').glob('*.png')}
+    for phone in (tmp_path / 'screens').glob('*390x844.png'):
+        assert phone.read_bytes() == bytes(2048)  # Decoded CDP payload, not a CLI screenshot.
 
 
 def test_voice_windows_hotkey_uses_popup(svc, monkeypatch):

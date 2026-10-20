@@ -82,8 +82,8 @@ async function smoke() {
       return;
     }
     const name = url.pathname === '/' ? 'index.html' : url.pathname.replace('/static/', '');
-    if (!['index.html', 'app.js', 'app.css'].includes(name)) { res.writeHead(404); return res.end(); }
-    res.setHeader('content-type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html');
+    if (!['index.html', 'app.js', 'app.css', 'theme.js', 'mark.svg'].includes(name)) { res.writeHead(404); return res.end(); }
+    res.setHeader('content-type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.svg') ? 'image/svg+xml' : 'text/html');
     res.end(fs.readFileSync(path.join(staticDir, name)));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

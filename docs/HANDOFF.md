@@ -48,6 +48,9 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 ## Backlog (top = next) — detailed cards in docs/tasks/
 
+- T-111 Web UI redesign — **needs-bro**, GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Implementation and
+  round-2 CDP phone capture fix delivered; shared Python still cannot start in this sandbox. Runner/Claude
+  must generate, inspect and commit 16 real PNGs plus manifest, then rerun pytest/eval. See screen README.
 0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
    (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - ~~T-101 browser extension (GPT)~~ done · ~~T-103 voice note (GPT)~~ done
@@ -138,6 +141,12 @@ Older backlog items (kept for reference):
 
 ## Review requests
 
+- [ ] Claude Code: T-111 round 2 — review CDP phone path and mocked transport test; run snapshots on the host,
+  inspect/commit all 16 PNGs + manifest and rerun gates (shared Python cannot start in builder sandbox).
+- [ ] Claude Code: review T-111 for functionality, accessibility/Thai layout, escaping and CSP regressions.
+  Run pytest/eval and `scripts/ui-snapshots.ps1` with shared venv; inspect/commit the 16 real PNGs.
+  Node theme/contrast tests and mocked PowerShell capture matrix pass; real Python/browser capture could not run here.
+
 - [ ] GPT (Codex): review T-110 `docs/team-mode.md` as a design (comments in the PR): SQLite-instead-of-Postgres
   (§3), token validation rules (§4), publish projection + "no MCP submit" (§6), state machine (§7), man-day formula
   (§9), PDPA legal-basis/retention proposal (§10), threat model gaps (§11), card split/order (§13). Also check the
@@ -174,6 +183,36 @@ Older backlog items (kept for reference):
   `_reclaim_for_meetings` in `episodes.py` (moving already-assigned events between episodes is new).
 
 ## Decision log
+
+- 2026-10-20 — T-111 round 2 (GPT): accept review's Windows headless minimum-width diagnosis. Phone capture
+  now uses built-in ClientWebSocket, loopback ephemeral DevTools port, metrics before navigation and viewport
+  capture; readiness checks actual 390px width/no overflow and seeded content. Desktop path remains as reviewed.
+  Windows mock exercises real protocol sequencing, asynchronous events, fragmented replies, decoding and disposal.
+  Local venv is the default before shared-worktree fallback; renamed browserProfile to avoid built-in PROFILE.
+  Moved incomplete task out of Done to needs-bro: capture/pytest/eval all attempted again, shared Python fails
+  before startup with system access error. Claude's host round-1 gate was 239 passed / eval 22/22 and visual
+  layouts were approved; corrected captures and fresh updated gate still require host execution. No disagreement.
+  Verification here: extracted Windows mock passes all 16 outputs and rejects the old phone path; Node theme
+  and contrast checks, PowerShell parse/ASCII and diff checks pass. Native Edge probe exposed/fixed PS 5.1
+  JSON-array handling, then Edge exited with unusable GPU before WebSocket connection. Optional editor smoke
+  cannot run (Playwright absent); no dependencies installed. No generated PNGs/manifest in tracked screens yet.
+- 2026-10-20 — T-111 (GPT): use Operations watch (ink-blue + teal), a three-node trail mark and episode
+  rail, a joined summary strip and quiet bordered surfaces. Thai-first Leelawadee UI/Noto Sans Thai/Tahoma,
+  generous line height, fixed streaming panes, mobile tabs/labelled table rows, visible focus/reduced motion.
+  Shared control tokens pass measured AA text contrast and 3:1 boundaries in both themes; no new dependencies.
+- 2026-10-20 — T-111 (GPT): execute the card/design plan inline under unattended authorization; runner
+  supplies Claude review, no approval pauses/extra agents/commits. External pre-CSS theme.js stores only
+  auto/light/dark in guarded localStorage, follows OS changes in auto, synchronizes Settings/sidebar/tabs.
+  SVG navigation is local; input names, skip link and aria-current improve keyboard/screen-reader navigation.
+  All existing IDs, render escaping, APIs and production LocalOnly remain intact.
+- 2026-10-20 — T-111 (GPT): snapshot helper requires a new home, explicitly fixes repo templates/export path,
+  seeds golden-day inbox through normal redaction/ingest, creates deterministic worklogs/two SOP versions;
+  no provider calls. Development-only external theme bootstrap under real LocalOnly makes both themes
+  deterministic regardless of desktop OS preference. Isolated hidden browser processes, Edge then Chrome,
+  16 captures, timeout/fail with logs, restore inherited environment; retain synthetic run files in .tmp.
+  Mocked Windows launcher test exposed PS array-expression grouping; explicit parentheses fixed it and
+  the 16-request matrix now passes. Shared Python cannot start (system access error), optional Playwright
+  is absent, headless native probes produced no PNG. Real screenshots/gates remain OPEN; no mock PNGs committed.
 
 - 2026-10-20 — T-110 (Claude): team mode = a separate API-only **Hub** in this repo (`src/opstrail/hub/`), no hub web
   frontend: leads also use their local web UI, which calls the Hub from Python (browser never talks to the Hub, so
