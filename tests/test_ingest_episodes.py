@@ -177,6 +177,17 @@ def presence(ts: str, title: str, dur: float) -> dict:
     return ev
 
 
+def test_presence_only_meeting_has_no_active_time(cfg, svc):
+    """Foreground excluded during the call: presence spans the meeting but is not active time (T-102)."""
+    write_jsonl(cfg, "p", [presence(at(14, 0), "Vendor sync | Microsoft Teams", 300),
+                           presence(at(14, 5), "Vendor sync | Microsoft Teams", 300)])
+    svc.refresh()
+    meeting = next(e for e in svc.store.episodes_between(DAY) if e["origin"] == "meeting")
+    assert meeting["end_epoch"] - meeting["start_epoch"] == 600
+    assert meeting["stats"]["active_s"] == 0
+    assert "| เวลาทำงาน (active) | 0s |" in svc.daily_recap(DAY, save=False)["markdown"]
+
+
 def test_growing_meeting_reclaims_work_but_not_renamed_episodes(cfg, svc):
     """Presence segments arrive every few minutes: work grouped in between moves into the meeting (T-102)."""
     call = "Change review | Microsoft Teams"

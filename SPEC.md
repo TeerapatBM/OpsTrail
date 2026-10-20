@@ -152,7 +152,9 @@ Incremental grouping (`opstrail.episodes.assign_episodes`), run on every refresh
    visible top-level windows (`EnumWindows` + `IsWindowVisible`); while one classifies as `meeting` and the user is
    active in another window (e.g. sharing the screen and typing in a terminal), it records synthetic `window` segments
    (`data.presence = true`, ≤ 5 min each, not while idle/paused, excluded apps/titles respected). They count as meeting
-   time (activity `meeting`) but not as focus/active time (`active_s`, window summaries, worklog totals).
+   time (activity `meeting`) but not as focus/active time (`active_s`, window summaries, worklog totals; a
+   presence-only episode has `active_s = 0`). When presence starts or stops, the focused window's segment is cut at
+   that moment, so foreground work after the call never stretches the meeting.
    Because these segments arrive every few minutes, a meeting that grows in a refresh takes back events an earlier
    refresh put into an `auto` episode inside its new span; manual, merged, renamed (`title_locked`) and
    document-referenced episodes are never touched, and a work episode left empty is deleted.

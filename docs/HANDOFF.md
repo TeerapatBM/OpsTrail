@@ -91,6 +91,8 @@ Older backlog items (kept for reference):
   work grouped into auto episodes inside its span; presence is meeting time, not focus time. Files: `agent/winapi.py`,
   `agent/osapi.py`, `agent/daemon.py`, `episodes.py`, `events.py`, `render.py`, `recap.py`, `service.py`, `config.py`,
   `evals/` (screen-share-day), tests, SPEC §4/§5, README.
+  Round 2 (GPT review): focus segment is split when presence starts/stops (`Agent._split_focus`); presence-only
+  episodes report `active_s = 0` (fallback span ignores presence). Tests in `test_agent.py`, `test_ingest_episodes.py`.
 
 ## Review requests
 
@@ -133,5 +135,10 @@ Older backlog items (kept for reference):
   says — a forgotten open meeting window must not create an all-night meeting. Listening without touching the
   mouse for > `idle_threshold_s` still ends the segment (unchanged behaviour). Not on Linux/macOS (`top_level_windows`
   returns `[]`).
+- 2026-10-20 — T-102 round 2 (Claude, after GPT review): a meeting attended only in the background (foreground
+  excluded/none) has `active_s = 0` — presence proves the call was open, not that the user was working, and it may
+  overlap focus time kept in a protected episode. The episode's start/end still span the call. A short call inside
+  continuous work still leaves the before/after work in one auto episode (rule 3, gap < `idle_split_min`); only the
+  focus segments are cut at the call boundaries.
 - 2026-10-20 — `test_hotkey_parse_and_match` failed on every Windows run (it read the real keyboard via
   `GetAsyncKeyState`); the test now stubs `_current_mods`. Test-only change, no behaviour change.

@@ -175,7 +175,10 @@ def compute_stats(events: list[dict[str, Any]], projects: dict[str, list[str]] |
             chats[subj] += float(ev.get("duration_s") or 1.0)
         elif act == "console" and subj:
             consoles[subj] += float(ev.get("duration_s") or 1.0)
-    active_s = window_s if window_s > 0 else max(0.0, end - start)
+    # without focus windows, fall back to the span of the user's own events (presence is not active time)
+    own = [e for e in timed if e["type"] != "window" or is_focus_window(e)]
+    own_span = max(_span(e)[1] for e in own) - min(_span(e)[0] for e in own) if own else 0.0
+    active_s = window_s if window_s > 0 else max(0.0, own_span)
     return {
         "start_epoch": start,
         "end_epoch": end,

@@ -171,6 +171,17 @@ class Agent:
         self.flush_presence(now)
         if meetings:
             self.presence = Segment(meetings[0][0], meetings[0][1], 0, 0, now)
+        if pres is not None or meetings:
+            self._split_focus(now)  # the call started/ended under this window: cut it at the boundary
+
+    def _split_focus(self, now: float) -> None:
+        """End the focused segment at `now` and keep the same window going from `now`, so a segment never
+        straddles a meeting boundary (work after the call must not stretch the meeting episode)."""
+        seg = self.current
+        if seg is None or seg.start >= now:
+            return
+        self.flush(now)
+        self.current = Segment(seg.app, seg.title, seg.pid, seg.hwnd, now)
 
     def _maybe_auto_shot(self, fg: dict[str, Any], now: float) -> None:
         if not self.auto_shot_titles:

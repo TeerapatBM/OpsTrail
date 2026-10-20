@@ -166,6 +166,27 @@ def test_meeting_presence_while_screen_sharing(svc, fake, cfg, monkeypatch):
     assert popups[0][0] >= t0 + 48 * 60
 
 
+def test_meeting_boundary_splits_the_focused_segment(svc, fake):
+    """The call starts and ends while the terminal keeps focus: work after the call stays out of the meeting."""
+    agent = make_agent(svc, fake)
+    t0 = fake.now  # 09:00
+    run_minutes(agent, fake, 2, PWSH, [])                # 09:00 terminal, no call yet
+    run_minutes(agent, fake, 3, PWSH, [MEETING_WIN])     # 09:02 call running in the background
+    run_minutes(agent, fake, 4, PWSH, [])                # 09:05 call closed, terminal still focused
+    agent.flush(fake.now)
+    agent.flush_presence(fake.now)
+    svc.refresh()
+
+    focus = [(w["epoch"] - t0, w["duration_s"]) for w in windows(svc) if not w["data"].get("presence")]
+    assert focus == [(0, 120), (120, 180), (300, 240)]
+    eps = svc.store.episodes_between("2026-10-19")
+    m = next(e for e in eps if e["origin"] == "meeting")
+    assert (m["start_epoch"], m["end_epoch"]) == (t0 + 120, t0 + 300)
+    assert m["stats"]["active_s"] == 180
+    after = next(w for w in windows(svc) if w["epoch"] == t0 + 300)
+    assert after["episode_id"] != m["id"]  # terminal work after the call is not part of the meeting
+
+
 def test_meeting_presence_can_be_disabled(svc, fake, home):
     (home / "config.toml").write_text(
         (home / "config.toml").read_text(encoding="utf-8") + "\n[meetings]\ndetect_background = false\n",
