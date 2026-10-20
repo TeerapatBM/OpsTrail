@@ -20,5 +20,8 @@ UI or from Claude / Copilot. Design: `docs/team-mode.md` §8, §11 (T5, T8, T9, 
 
 ## Acceptance criteria
 - [ ] ACL tests: pending, rejected and restricted-customer documents never appear for a plain member
+- [ ] retag ACL test (design §7 `can_read`): approved rev tagged restricted, pending rev retagged to a team-visible
+      customer → search, `/kb/docs`, `/kb/assets` return nothing of the approved rev to a non-group member before
+      approval, and only the new rev after it; the reverse retag hides the approved rev at once
 - [ ] Thai query test (trigram) and MCP output framing test on both SDK versions
 - [ ] SPEC (MCP tools table) / README (Thai) updated

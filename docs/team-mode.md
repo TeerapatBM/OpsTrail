@@ -159,16 +159,32 @@ Self-approval is blocked even for leads/admins (four-eyes); a one-person team ca
 |---|---|---|
 | `uuid` | client, random v4 on first submit | idempotency key; maps to the local episode in `team_items` |
 | `date`, `start`, `end` | episode | local date (Asia/Bangkok), ISO times |
-| `active_min`, `meeting_min` | episode stats | focus time; background presence counts as meeting time (T-102 rules) |
+| `segments` | source episodes | `[[start, end], …]`, one per merged episode; the Hub rejects (409) a segment that overlaps another live work entry of the same owner |
+| `active_min` | Σ episode `stats.active_s` | **the** captured time — see "Minutes" below |
+| `meeting_min` | breakdown of `active_min` | the part of `active_min` spent in meetings; never added to it (`meeting_min ≤ active_min`, Hub 400 otherwise) |
 | `claimed_min` | **user**, optional | what the user says they spent (offline work, calls); report shows captured vs claimed |
 | `customer` | user (pre-filled) | registry code |
 | `title` | user (pre-filled) | **must be confirmed**: auto titles come from window titles/commands (same concern as T-105) |
 | `summary` | user, optional, ≤ 1000 chars | free text, not taken from notes automatically |
-| `activities` | episode stats | minutes per activity class (`terminal`, `console`, `meeting`, …), no subjects |
+| `activities` | focus windows of the episode | minutes per activity class (`terminal`, `console`, `meeting`, …), no subjects; Σ ≤ `active_min` |
 | `tags` | episode tags minus `customer:` | |
 | `doc_uuids` | links to submitted documents | |
 
 Not included: commands, cwd, window titles, URLs, subjects, notes, output, screenshots, host, timeline.
+
+**Minutes — one wall-clock minute is counted once.** The projection never adds overlapping sources:
+
+- `active_min` = Σ `round(stats.active_s / 60)` of the source episodes. `active_s` is focused-window time only;
+  background meeting presence (`data.presence`) is **not** added, because it overlaps the focus windows of the
+  same minutes (T-102: `episodes.py` counts presence once, `test_agent.py` asserts a 35-min screen-shared call has
+  `active_s = 35 min`). Episodes never overlap (T-102 reclaims foreground work during a call into the meeting
+  episode), and each local episode can belong to at most one work entry (`team_items` mapping; the client refuses
+  a second submit, the Hub's `segments` overlap check catches a modified client).
+- `meeting_min` ⊆ `active_min`: a meeting episode (`origin = meeting`, focused **or** screen-shared) → its whole
+  `active_min` (the call, incl. foreground work while sharing); any other episode → its focused minutes classified
+  `meeting`. A presence-only episode has `active_s = 0` (T-102) → 0/0; the user can enter `claimed_min`.
+- `activities` is recomputed from focus windows only (the local `stats.activities` also counts presence segments
+  and a 30 s weight per command, which overlap focus time — fine for titles, wrong for minutes).
 
 ### 6.2 Document
 
@@ -200,13 +216,13 @@ customer data on its own. MCP gets read-only team tools (§8).
 ```
 users(oid PK, display_name, upn, first_seen, last_seen, active, notice_version, notice_accepted_at, pseudonym)
 customers(code PK, name, keywords JSON, active, visibility, access_group, created_at, updated_at)
-items(uuid PK, kind 'work'|'doc', owner_oid, customer, state, current_rev, approved_rev, legal_hold, created_at, updated_at)
-work_revisions(uuid, rev, payload JSON, sha256, submitted_at, PK(uuid, rev))
-doc_revisions(uuid, rev, template, title, markdown, local_version, assets JSON, fact_check JSON, sha256, submitted_at, PK(uuid, rev))
+items(uuid PK, kind 'work'|'doc', owner_oid, state, current_rev, approved_rev, legal_hold, created_at, updated_at)
+work_revisions(uuid, rev, customer, payload JSON, sha256, submitted_at, PK(uuid, rev))
+doc_revisions(uuid, rev, customer, template, title, markdown, local_version, assets JSON, fact_check JSON, sha256, submitted_at, PK(uuid, rev))
 assets(sha256 PK, mime, size, path, uploaded_by, created_at)          -- files under <hub_home>/assets/aa/<sha256>
 reviews(id PK, uuid, rev, reviewer_oid, decision 'approve'|'reject'|'remove', comment, created_at)
 audit(id PK, ts, actor_oid, action, target, detail JSON, prev_hash, hash)
-kb_fts(title, body, uuid UNINDEXED)  -- trigram; only approved_rev of approved docs
+kb_fts(title, body, uuid UNINDEXED, rev UNINDEXED)  -- trigram; only approved_rev of approved docs
 settings(key PK, value)              -- hours_per_manday, retention, allow_self_approval, notice text/version
 ```
 
@@ -221,6 +237,18 @@ settings(key PK, value)              -- hours_per_manday, retention, allow_self_
 ```
 
 - An approved document stays visible in the KB at `approved_rev` while a newer revision waits for review.
+- **The customer belongs to a revision, not to the item** (a new revision may retag it). Access is checked by one
+  function, `can_read(user, item)`, used by every read path (KB search SQL filter, `/kb/docs`, `/kb/assets`,
+  weekly report, man-days, review queue):
+  - approved content (KB, reports) — the user must be allowed to see the customer of `approved_rev` **and**, while
+    a newer revision is pending (`state = submitted`), the customer of that revision too. So retagging
+    `RESTRICTED → team customer` exposes nothing before a lead approves it, and retagging `team → RESTRICTED`
+    hides the old approved revision from non-group members at once (fail closed);
+  - the review queue / pending content — the reviewer must be allowed to see the customers of `current_rev` and
+    `approved_rev`; the owner always sees their own revisions;
+  - `/kb/assets/{sha256}` — only if some approved revision the user can read references that asset (assets are
+    content-addressed and may be shared between documents).
+  Man-days and the weekly report attribute minutes to the customer of `approved_rev`.
 - Work entries count in reports only at `approved_rev`. Leads approve a member's week in one action
   ("อนุมัติทั้งสัปดาห์") or item by item.
 - PUT is idempotent on `(uuid, sha256)`; a different payload for an already-stored rev → 409. Unknown JSON
@@ -271,7 +299,11 @@ Local additions (built on this API, cards T-203…T-208):
 - **Weekly report** (deterministic, like `recap.py`): per member — approved work entries grouped by customer
   (title, hours), documents submitted / approved, meeting hours; team section — hours and man-days per
   customer, new KB documents, items still waiting for review. `scope=me` = own section only.
-- **Minutes of a work entry** = `claimed_min` if given, else `active_min + meeting_min`.
+- **Minutes of a work entry** = `claimed_min` if given, else `active_min` (§6.1 — `active_min` already contains
+  the meeting time). `meeting_min` is only a breakdown ("meeting hours" in the report) and is **never added**.
+- A golden fixture covers a focused meeting (Teams in front), a screen-shared meeting (PowerShell in front, Teams
+  in the background → presence segments) and foreground work after the call: expected minutes = wall-clock focus
+  time, and the property "Σ minutes of one member's day ≤ union of their focus windows" is asserted.
 - **Man-days** = Σ minutes ÷ (`hours_per_manday` × 60), `hours_per_manday = 8` by default; shown with two
   decimals, plus captured vs claimed minutes so a lead sees adjustments. Rounding for invoices is a finance
   decision, not OpsTrail's. `INTERNAL` is reported separately.
@@ -358,7 +390,7 @@ misconfigured Entra, prompt-injected AI client.
 | T2 | forged or foreign-tenant token (S) | full validation §4 (sig, iss, tid, aud, azp, scp, exp); reject `alg=none`/HS*; JWKS only from configured tenant URL | fake-JWKS tests for each rule |
 | T3 | stolen token from a laptop (S, I) | DPAPI cache, short access tokens, Conditional Access, Entra revocation, user `active=false` on offboarding | token cache test; offboarding test |
 | T4 | member acts as lead/admin (E) | role only from `roles` claim; one `authorize(user, action, item)` function; deny by default | route × role matrix test (every route) |
-| T5 | member reads others' pending items or restricted customers (I) | ACL in SQL filters for search/read/report; owner check on items | matrix test incl. restricted customer |
+| T5 | member reads others' pending items or restricted customers, incl. via a retagged revision (I) | ACL in SQL filters for search/read/report; customer per revision + one `can_read` (§7); owner check on items | matrix test incl. restricted customer and retag in both directions |
 | T6 | secrets/PII leave the laptop in a submission (I) | projection without raw fields, redaction on client **and** Hub, preview with warnings, image checkbox, lead review, PII check | tests: payload never contains cmd/title/url fields; Hub re-redacts a token sent by a "modified client" |
 | T7 | modified client pushes raw data in allowed fields (I) | strict schema, field length limits, re-redaction, review before KB/reports | schema tests |
 | T8 | approved doc carries prompt injection into AI clients (T) | approved-only, author+approver shown, untrusted-data framing in MCP output, docs never executed | MCP output test |
@@ -408,7 +440,8 @@ Pilot after T-208: Bro + one lead, one customer, two weeks; then T-209 must be d
    Both optional extras; the single-user install stays unchanged. *Recommended: yes.*
 3. **Where the Hub runs**: Sysware DC/VM reachable over VPN (recommended) vs. a cloud VM; region inside Thailand?
 4. **Entra**: who in IT creates the two app registrations and groups; Entra ID P1 available (group → role)?
-5. **Man-day**: 8 h? Do meetings count? Is `claimed_min` allowed, and should a lead see the captured value?
+5. **Man-day**: 8 h? Do meetings count (proposed: yes — they are part of `active_min`, §6.1)? Is `claimed_min`
+   allowed, and should a lead see the captured value?
 6. **Lead approval for work entries** — required (proposed) or only for documents?
 7. **Retention values** in §10.5 and **DPO/legal review** of §10 + Appendix A before the pilot.
 8. **Restricted customers** needed from day one (which customers' contracts forbid team-wide sharing)?

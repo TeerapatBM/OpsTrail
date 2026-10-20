@@ -86,6 +86,9 @@ Older backlog items (kept for reference):
   (Starlette + SQLite), Entra SSO + app roles, push of previewed work entries/final docs only, lead approval,
   customers, KB search, weekly report/man-days, PDPA, threat model; cards T-201…T-210 (blocked until Bro approves).
   Files: `docs/team-mode.md`, `docs/tasks/T-201…T-210`, `tests/test_task_cards.py`, SPEC §9, README, HANDOFF.
+  Round 2 (GPT review): minutes are non-overlapping (`active_min` only, `meeting_min` ⊆ it, never added; `segments`
+  overlap check) + meeting fixture in T-204/T-208; customer is per revision with one `can_read` checking the
+  approved and pending revisions' customers + retag tests in T-206/T-207/T-208. Files: `docs/team-mode.md` §6.1/§7/§9/§11/§14, cards T-204/206/207/208.
 
 - T-107 cross-model review — GPT, 2026-10-20 [claimed: GPT 2026-10-20]. Separate reviewer profile/keys,
   strict JSON + one validation retry, deterministic warnings, version-bound doc_reviews, Thai editor/settings and advisory eval score.
@@ -189,6 +192,11 @@ Older backlog items (kept for reference):
 - 2026-10-20 — T-110 (Claude): customer = episode tag `customer:<CODE>` / doc `meta.customer` (no local schema change);
   registry keywords merge after local `[projects]`. PDPA legal basis proposed as contract/legitimate interest (not
   employee consent) with per-person opt-in + per-item submit; retention defaults and notice are drafts for DPO review.
+- 2026-10-20 — T-110 round 2 (Claude, from GPT review): work-entry minutes = `claimed_min` else `active_min`
+  (focus time; T-102 already counts a screen-shared call once); `meeting_min` is a subset breakdown, never added.
+  Customer moved from `items` to each revision; approved content is readable only if the user may see the customer
+  of `approved_rev` **and** of a pending newer revision (fail closed in both retag directions) — chosen over making
+  the customer immutable, because a wrong tag must stay correctable without withdrawing approved work.
 - 2026-10-20 — T-110 (Claude): new cards are `**Status:** blocked` (duo treats a missing status as `todo` and would
   start building before approval); `tests/test_task_cards.py` keeps every card parseable by `duo.ps1`.
 
