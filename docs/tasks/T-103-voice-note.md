@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** M
 
+**Status:** todo · **Priority:** 7
+
 ## Goal
 Hotkey `Ctrl+Alt+V` records up to 60 s from the default microphone, transcribes it (Thai + English) and
 stores it as a `note` (attached to the current/just-ended episode). Also usable from the meeting-summary popup.

@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT (Codex / Copilot) · **Phase:** B · **Size:** M
 
+**Status:** todo · **Priority:** 6
+
 ## Goal
 Edge/Chrome extension (Manifest V3) that reports the active tab's URL + title to the local OpsTrail agent, so
 documents can say *exactly* which portal page was used (Azure blade, Sentinel rule, vCenter object).

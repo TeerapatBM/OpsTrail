@@ -2,14 +2,24 @@
 
 Protocol: see `AGENTS.md`. Claim with `[claimed: <agent> <YYYY-MM-DD>]`, move to *Done* with a summary.
 
-## Status — v0.3.0 (2026-10-20, built by Claude)
+## Status — v0.3.1 (2026-10-20, built by Claude)
+
+v0.3.1: **duo autopilot** `scripts/duo.ps1` — Claude Code + Codex build and cross-review task cards unattended on Bro's
+subscriptions (no API key, no approval prompts): worktree per card → builder → gate (pytest + eval, run by the
+script) → reviewer of the other model → fix rounds → PR + CI → squash-merge → local pull + agent restart; nightly
+via Task Scheduler. Prompts in `scripts/duo/prompts/`, Claude permission files in `scripts/duo/`, interactive
+configs in `setup/claude`, `setup/codex`. Cards now carry `**Status:**` + `**Priority:**`. Claude review action
+uses `CLAUDE_CODE_OAUTH_TOKEN` (subscription) and skips duo PRs. Claude Code hook honours `OPSTRAIL_NO_CAPTURE`.
+Tested with fake claude/codex/gh CLIs on pwsh 7 (gate fail → fix, CHANGES → fix → APPROVE → merge, never-approved
+→ needs-bro, Codex sandbox fallback, quota stop, local-only mode); `tests/test_duo.py` runs the script end-to-end
+with fake CLIs (Windows PowerShell 5.1 on the Windows CI runner). Not yet run with the real CLIs on Bro's laptop.
 
 v0.3 (Phase A): activity classifier (rules TOML), meetings as their own episodes with exact times +
 post-meeting summary popup, notes attach to what just ended, `meeting-minutes` template, profile name
 (fixes "Lenovo X1 Gen 9" as author), learn-from-edits + style lessons, deterministic fact-check after every AI
 draft, AI episode titles, golden-day eval harness (`opstrail eval`), GitHub kit (CI on Windows/Linux incl.
 PowerShell 5.1 checks + Windows-only tests, Claude PR review, Copilot setup steps, PR/issue templates,
-`scripts/init-github.ps1`), task cards T-101…T-110. Tests: 91 (+5 Windows-only).
+`scripts/init-github.ps1`), task cards T-101…T-110. Tests: 91 (+5 Windows-only); v0.3.1: 97 (+5).
 Repo: https://github.com/TeerapatBM/OpsTrail — push with `scripts/init-github.ps1` (Claude's session has no GitHub access).
 
 v0.2.1: Bro ran it on Windows — installer, agent, web UI and DPAPI key storage work. Fixed: Claude API keys that
@@ -38,7 +48,8 @@ hotkeys, screenshots, tkinter popups (focus), install.ps1, PowerShell hook under
 
 ## Backlog (top = next) — detailed cards in docs/tasks/
 
-0. [ ] **Push to GitHub** (`scripts/init-github.ps1 -CreateIssues`) + add `ANTHROPIC_API_KEY` secret — _owner: Bro_
+0. [ ] **Push to GitHub** (`scripts/init-github.ps1`), then `scripts/duo.ps1 -Setup` and `-Schedule 22:30 -MaxTasks 2`
+   (optional secret `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`) — _owner: Bro_. Order of work = card Priority.
 - T-101 browser extension (GPT) · T-102 meeting presence while screen sharing (Claude) · T-103 voice note (GPT)
 - T-104 web diff + streaming (GPT) · T-105 Teams digest (GPT) · T-106 PowerShell output capture (Claude)
 - T-107 cross-model reviewer "ให้ AI ตรวจ" (GPT) · T-108 tray icon (GPT) · T-109 M365 connector (Claude, blocked: M365 approval)
@@ -73,6 +84,7 @@ Older backlog items (kept for reference):
 
 - v0.1.0 initial implementation — Claude, 2026-10-20 (all files).
 - v0.2.0 local web UI + LLM providers — Claude, 2026-10-20 (`web/`, `llm.py`, `secretstore.py`, service web helpers).
+- v0.3.1 duo autopilot — Claude, 2026-10-20 (`scripts/duo.ps1`, `scripts/duo/`, `setup/claude`, `setup/codex`, cards, workflow, docs).
 - v0.3.0 Phase A quality loop — Claude, 2026-10-20 (`activity.py`, `quality.py`, `evals.py`, episodes meetings, web, setup/github, docs/tasks).
 
 ## Review requests
@@ -98,3 +110,8 @@ Older backlog items (kept for reference):
 - 2026-10-20 — No M365 connection yet (Bro): meetings come from window titles + a post-meeting summary prompt;
   Graph (calendar/transcripts) is T-109, blocked on approval. No audio recording of meetings.
 - 2026-10-20 — Collaboration via GitHub PRs with CI + cross-review; golden-day evals decide disagreements.
+- 2026-10-20 — Bro: limited API credit, no time to approve anything → development runs on the Claude / ChatGPT
+  subscriptions through the Claude Code and Codex CLIs, driven by `scripts/duo.ps1`. The runner (not the agents)
+  commits, gates and merges; merge needs gate green + APPROVE from the *other* model + CI. Claude runs with
+  `--permission-mode dontAsk` + allow/deny files (deterministic, no classifier); Codex with `--full-auto`
+  (fallback: full access inside the worktree when the Windows sandbox is unavailable), reviewer read-only.

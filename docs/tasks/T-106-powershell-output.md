@@ -2,6 +2,8 @@
 
 **Suggested owner:** Claude · **Phase:** B · **Size:** M
 
+**Status:** todo · **Priority:** 3
+
 ## Goal
 SOPs need the expected output of each step. Capture the first N lines of each PowerShell command's output.
 

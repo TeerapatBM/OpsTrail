@@ -335,6 +335,8 @@ def cmd_hook(args: argparse.Namespace) -> int:
     """Claude Code PostToolUse hook: reads the hook JSON from stdin and logs an `ai` event."""
     from opstrail.events import make_event, write_inbox
 
+    if os.environ.get("OPSTRAIL_NO_CAPTURE"):  # e.g. AI developers run by scripts/duo.ps1
+        return 0
     cfg = load_config()
     if cfg.is_paused():
         return 0

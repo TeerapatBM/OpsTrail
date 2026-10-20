@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** S
 
+**Status:** todo · **Priority:** 5
+
 ## Goal
 Tray icon (pystray) showing recording state (green/grey), with menu: เปิดหน้าเว็บ, หยุด/บันทึกต่อ,
 โน้ต, ถ่ายรูป, Daily worklog วันนี้, ออก.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opstrail"
-version = "0.3.0"
+version = "0.3.1"
 description = "OpsTrail – capture daily ops work and turn it into SOPs, delivery docs and guides via MCP"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,3 +6,7 @@ build/
 dist/
 *.pyc
 ~$*.docx
+# duo.ps1 run state/logs, and temp files of AI runs
+.duo/
+.tmp/
+.claude/settings.local.json

@@ -136,3 +136,23 @@ def test_win_combo_flags():
     assert win_combo("<ctrl>+<shift>+f9") == (0x2 | 0x4, 0x78)
     with pytest.raises(ValueError):
         win_combo("<ctrl>+<alt>+pageup")
+
+
+def test_claude_code_hook_logs_and_respects_no_capture(cfg, monkeypatch):
+    import io
+    import json
+
+    from opstrail.cli import main
+
+    monkeypatch.delenv("OPSTRAIL_NO_CAPTURE", raising=False)
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git status"}, "cwd": "/repo"})
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    assert main(["hook", "claude-code"]) == 0
+    assert len(list(cfg.inbox_dir.glob("*.jsonl"))) == 1
+    # AI developers started by scripts/duo.ps1 must not end up in Bro's worklog
+    for f in cfg.inbox_dir.glob("*.jsonl"):
+        f.unlink()
+    monkeypatch.setenv("OPSTRAIL_NO_CAPTURE", "1")
+    monkeypatch.setattr("sys.stdin", io.StringIO(payload))
+    assert main(["hook", "claude-code"]) == 0
+    assert not list(cfg.inbox_dir.glob("*.jsonl"))

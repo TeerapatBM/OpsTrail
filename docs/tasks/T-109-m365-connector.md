@@ -2,6 +2,8 @@
 
 **Suggested owner:** Claude · **Phase:** B/C · **Size:** L · **Blocked by:** Entra app registration / admin consent
 
+**Status:** blocked · **Priority:** 99
+
 ## Goal
 Exact meeting subjects/attendees from the calendar, the meeting **transcript** (when transcription was on),
 and the user's own Teams chat/mail subjects — as events attached to the right episodes.

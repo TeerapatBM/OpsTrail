@@ -35,14 +35,17 @@ src/opstrail/
   quality.py               learn-from-edits diffs, style lessons, deterministic fact-check
   evals.py                 golden-day evaluation harness (`opstrail eval`)
 evals/                     golden-day fixtures (days/*.jsonl) + expectations (cases.toml) — the referee
-docs/tasks/                task cards (T-xxx) → GitHub issues; docs/COLLABORATION.md = workflow
+docs/tasks/                task cards (T-xxx, "**Status:** todo · **Priority:** n") → picked up by scripts/duo.ps1
+scripts/duo.ps1            duo autopilot: Claude Code + Codex build/review task cards unattended (docs/COLLABORATION.md)
+scripts/duo/               prompts (build/review/fix) + Claude permission files used by duo.ps1
   cli.py                   `opstrail` command
   agent/                   capture agent: daemon loop, winapi (ctypes), hotkeys, screenshot, tkinter popups
 hooks/                     PowerShell / bash+zsh / Claude Code hooks that write to the inbox
 templates/                 document templates (Thai)
 scripts/install.ps1        Windows installer (venv, profile hook, startup, Claude Desktop, VS Code files)
-setup/vscode, setup/github source of .vscode/*.json and .github/copilot-instructions.md (installer copies them;
-                           edit the files in setup/ so the next install keeps your change)
+setup/vscode, setup/github source of .vscode/*.json and .github/ (installer / init-github copy them)
+setup/claude, setup/codex  source of .claude/settings.json and .codex/config.toml (duo.ps1 -Setup copies them);
+                           edit the files in setup/ so the next install keeps your change
 tests/                     pytest suite (runs on Linux CI without a display)
 ```
 
@@ -88,15 +91,31 @@ python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]" && pytes
 
 ## Claude ↔ GPT collaboration protocol
 
-The repo is https://github.com/TeerapatBM/OpsTrail — one task card / issue = one branch = one PR. CI (Windows +
-Linux) and the Claude review action run on every PR. Full workflow: `docs/COLLABORATION.md`.
+The repo is https://github.com/TeerapatBM/OpsTrail — one task card = one branch = one PR. Normally
+`scripts/duo.ps1` drives it: card owner builds, the other model reviews, CI (Windows + Linux) gates the merge.
+Everything runs on Bro's Claude / ChatGPT subscriptions – never add code that needs an API key for development.
+Full workflow: `docs/COLLABORATION.md`.
 
 - `docs/HANDOFF.md` has the backlog. **Claim** a task by writing `[claimed: <agent> <date>]` next to it before
   you start; when done, move it to *Done* with a 1–3 line summary + files touched.
-- One task per commit/PR. Commit prefix: `[claude]`, `[gpt]`, `[copilot]` or `[bro]`.
+- One task per PR. Commit prefix: `[claude]`, `[gpt]`, `[copilot]`, `[duo]` (runner) or `[bro]`.
 - Don't silently rewrite another agent's design: add an entry to the *Decision log* in HANDOFF explaining why.
 - After finishing a task, add a **Review request** line for the other agent; the reviewer answers in HANDOFF.
 - If something in SPEC.md looks wrong, propose the change in HANDOFF first unless it is a clear bug.
+
+## Unattended runs (scripts/duo.ps1)
+
+Most of the time you are started by `scripts/duo.ps1` with no human watching. Then:
+
+- You work in a git worktree on branch `duo/T-xxx`; PYTHONPATH, TEMP and OPSTRAIL_HOME are set for you.
+  Use the shared venv python the prompt names; do not create venvs or pip install.
+- Do **not** commit, push, merge, switch branches or call `gh` – the runner commits each round, runs the gate
+  (pytest + eval) itself, asks the other model to review, and merges only when both are green.
+- Builder: finish with the `SUMMARY / CHANGES / TESTS / OPEN` block. Reviewer: stay read-only and end with
+  `VERDICT: APPROVE` or `VERDICT: CHANGES` (only blockers/majors justify CHANGES).
+- Nobody can answer questions: decide, record the decision in HANDOFF's Decision log, list leftovers under OPEN.
+- When a card is impossible to finish here (needs hardware, an account, an approval), implement what you can
+  behind a graceful fallback and say so under OPEN – the PR then goes to Bro as `needs-bro`.
 
 ## Dogfooding
 

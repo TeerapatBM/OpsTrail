@@ -95,11 +95,20 @@
 - `docs/HANDOFF.md` = กระดานงานร่วมระหว่าง Claude ↔ GPT (backlog, claim, review, decision log)
 - Tasks: `Terminal → Run Task → OpsTrail: …` (install, tests, doctor, recap, agent)
 
-## พัฒนาร่วมกัน Claude ↔ GPT (GitHub)
+## พัฒนาร่วมกัน Claude ↔ GPT (อัตโนมัติ ใช้แค่ subscription)
 
-Repo: https://github.com/TeerapatBM/OpsTrail — ครั้งแรกรัน `scripts\init-github.ps1 -CreateIssues` แล้วดู
-[`docs/COLLABORATION.md`](docs/COLLABORATION.md): task card → issue → GPT (Copilot/Codex) หรือ Claude เปิด PR →
-CI บน Windows + Linux และ Claude review อัตโนมัติ → คุณ merge · ผลวัด `opstrail eval` (golden days ใน `evals/`) เป็นกรรมการ
+Repo: https://github.com/TeerapatBM/OpsTrail — `scripts\duo.ps1` สั่ง **Claude Code** (Claude Pro/Max) กับ **Codex**
+(ChatGPT plan) ให้ผลัดกันเขียนและตรวจงานจาก task card ใน `docs/tasks/` เอง: builder เขียน → script รัน pytest + eval
+→ อีก model review → แก้จนผ่าน → PR + CI → merge → อัปเดตเครื่องคุณและ restart agent ให้ ไม่ต้องกด approve และไม่ใช้ API key
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Setup                       # ครั้งแรก
+powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Schedule 22:30 -MaxTasks 2  # ทุกคืน
+powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Status                      # ดูสถานะ
+```
+
+ขั้นตอนติดตั้ง Claude Code / Codex, การดู PR ที่ติด `needs-bro`, prompt สำหรับสั่งเองแบบ interactive และการเพิ่มงานใหม่:
+[`docs/COLLABORATION.md`](docs/COLLABORATION.md) · กรรมการตัดสินคือ `opstrail eval` (golden days ใน `evals/`)
 
 ## ปรับ format เอกสารของทีม
 

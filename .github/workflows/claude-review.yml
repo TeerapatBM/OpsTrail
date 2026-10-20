@@ -1,6 +1,8 @@
-# Claude reviews every PR (e.g. PRs opened by Copilot coding agent / Codex) and answers "@claude" mentions.
-# Needs repository secret ANTHROPIC_API_KEY — use a key that is scoped to ONE workspace
-# (keys that span several workspaces need an extra header the action may not send).
+# Claude reviews PRs that were NOT made by scripts/duo.ps1 (duo already had them cross-reviewed locally)
+# and answers "@claude" mentions. Uses your Claude Pro/Max SUBSCRIPTION, not API credit:
+#   1. on your laptop:  claude setup-token      (prints a long-lived OAuth token)
+#   2. GitHub repo -> Settings -> Secrets and variables -> Actions -> New secret CLAUDE_CODE_OAUTH_TOKEN
+# Without the secret this workflow does nothing (it is skipped, not failed).
 # Options: https://github.com/anthropics/claude-code-action
 name: Claude review
 
@@ -21,16 +23,20 @@ permissions:
 jobs:
   review:
     if: >
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'duo')) ||
       contains(github.event.comment.body, '@claude')
     runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
         with:
           fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
+        if: env.HAS_TOKEN == 'true'
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             You are the reviewer for OpsTrail. Read AGENTS.md, SPEC.md and docs/HANDOFF.md first.
             Review the changes of this pull request against those rules: business logic in service.py,

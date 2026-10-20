@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** M
 
+**Status:** todo · **Priority:** 8
+
 ## Goal
 Button in the editor that sends the draft + source pack to a *reviewer* provider (can differ from the writer)
 and shows a list of issues: claims without evidence in the sources, missing steps, unclear wording,

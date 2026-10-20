@@ -99,6 +99,8 @@ if ($CreateIssues) {
 
 Write-Host ""
 Write-Host "Done. Next on GitHub:" -ForegroundColor Cyan
-Write-Host "  1. Settings > Secrets and variables > Actions: add ANTHROPIC_API_KEY (workspace-scoped key) for Claude PR review"
-Write-Host "  2. Assign an issue to Copilot (coding agent) or open it in Codex - it opens a PR, CI + Claude review run"
+Write-Host "  1. Let Claude Code + Codex build the task cards on your subscriptions (no API key):"
+Write-Host "       powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Setup"
+Write-Host "       powershell -ExecutionPolicy Bypass -File .\scripts\duo.ps1 -Schedule 22:30 -MaxTasks 2"
+Write-Host "  2. Optional: secret CLAUDE_CODE_OAUTH_TOKEN (from 'claude setup-token') for Claude review of non-duo PRs"
 Write-Host "  3. See docs/COLLABORATION.md"

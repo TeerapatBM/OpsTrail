@@ -2,6 +2,8 @@
 
 **Suggested owner:** Claude · **Phase:** A+ · **Size:** S
 
+**Status:** todo · **Priority:** 1
+
 ## Goal
 Today a meeting is detected only while the Teams meeting window has focus. When you share your screen and
 work in a terminal for 20 minutes, the meeting episode ends. Detect "a meeting window exists" instead.

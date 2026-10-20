@@ -2,6 +2,8 @@
 
 **Suggested owner:** Claude (design) → GPT + Claude (implementation) · **Phase:** C · **Size:** L
 
+**Status:** todo · **Priority:** 9
+
 ## Goal
 A written design (docs/team-mode.md) before any code: central server, sync of *approved* episodes/documents
 only, Entra ID SSO, roles (member / lead / admin), per-customer tagging, team knowledge base search, weekly

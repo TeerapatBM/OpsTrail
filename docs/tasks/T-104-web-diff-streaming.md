@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** M
 
+**Status:** todo · **Priority:** 2
+
 ## Goal
 1. "เทียบเวอร์ชัน" button: side-by-side or inline diff between any two versions (word-level for Thai).
 2. Stream the AI answer into the editor while it is generated (Anthropic `stream: true`, OpenAI SSE).

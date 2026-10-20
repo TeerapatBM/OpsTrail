@@ -2,6 +2,8 @@
 
 **Suggested owner:** GPT · **Phase:** B · **Size:** S
 
+**Status:** todo · **Priority:** 4
+
 ## Goal
 At recap time, optionally post a short Adaptive Card to a Teams channel via a Power Automate
 "Workflows" webhook: today's work items (title, time), meetings, and "documents to write" candidates.

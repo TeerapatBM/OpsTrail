@@ -1,0 +1,9 @@
+# Codex project settings for OpsTrail - copied to .codex/config.toml by `scripts\duo.ps1 -Setup`.
+# Codex reads project config only after you mark this folder as trusted (it asks once when you open it).
+# No approval prompts: Codex may edit files and run commands inside this folder; anything outside the
+# folder is blocked by the sandbox instead of asking you.
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = false

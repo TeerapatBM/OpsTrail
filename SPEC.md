@@ -255,8 +255,9 @@ Prompts: `daily_worklog(date)`, `write_document(template, topic, date, date_to)`
 * **v0.2** – local web UI with AI providers (Claude API / OpenAI-compatible / Azure OpenAI), copy/paste prompt.
 * **v0.3 (this)** – activity classifier, meeting episodes + post-meeting summary prompt, meeting-minutes template,
   learn-from-edits + style lessons, fact-check, AI episode titles, golden-day evals, GitHub CI (Windows) + task cards.
-* **v0.2** – LLM-assisted episode titling, Teams digest at recap time, SSH session
-  capture (`script`/transcript), Start-Transcript output capture, browser URL capture.
-* **v0.3** – team mode: central server (Postgres), per-user auth, cloud audit-log
-  collectors (Azure Activity/Entra, Alibaba ActionTrail, vCenter events), web review UI,
+  v0.3.1: development autopilot `scripts/duo.ps1` (Claude Code + Codex on subscriptions, cross-review, gated merge).
+* **next (Phase B, task cards T-101…T-108)** – browser URL capture, meeting presence while screen sharing, voice
+  notes, web diff + streaming, Teams digest, PowerShell output capture, cross-model draft review, tray icon.
+* **later** – M365 connector (T-109, needs approval); team mode (T-110): central server (Postgres), per-user auth,
+  cloud audit-log collectors (Azure Activity/Entra, Alibaba ActionTrail, vCenter events), web review UI,
   SharePoint/Confluence publishing, knowledge-base search across the team.
