@@ -1,0 +1,240 @@
+# OpsTrail activity rules — first matching rule wins.
+# Override or extend in ~/.opstrail/activity_rules.toml (your rules are checked BEFORE these).
+#
+# Fields (all optional except activity):
+#   activity      meeting | chat | email | terminal | remote | console | research | docs | code | ai | files | other
+#   types         event types the rule applies to (default: ["window", "screenshot"])
+#   apps          process names (case-insensitive), e.g. ["ms-teams.exe"]; "@browser" = any web browser
+#   title_regex   regex the window title must match (named group (?P<subject>...) becomes the subject)
+#   title_exclude regex that must NOT match
+#   cmd_regex     regex for shell/ai commands
+#   subject       fixed subject when the regex has no (?P<subject>) group (e.g. a product name)
+
+# ---------------------------------------------------------------- meetings
+[[rule]]
+activity = "meeting"
+apps = ["ms-teams.exe", "teams.exe", "@browser"]
+title_regex = '^(?:Meeting compact view \| )?(?P<subject>[^|]+?) \| Microsoft Teams$'
+title_exclude = '(?i)^(chat|activity|calendar|teams|calls|files|onedrive|apps|copilot|settings|community|assignments|planner|approvals|search|notifications|meet|people|home|new chat|microsoft teams)\s*(\||$)'
+
+[[rule]]
+activity = "meeting"
+apps = ["ms-teams.exe", "teams.exe"]
+title_regex = '(?i)^(?P<subject>(?:meeting|call|การประชุม|โทร)[^|]*?) \|'
+
+[[rule]]
+activity = "meeting"
+apps = ["zoom.exe"]
+title_regex = '(?i)(?P<subject>zoom (?:meeting|webinar)[^|]*)'
+
+[[rule]]
+activity = "meeting"
+apps = ["@browser"]
+title_regex = '(?i)^(?:meet - )?(?P<subject>.+?) - google meet'
+
+[[rule]]
+activity = "meeting"
+apps = ["webexmta.exe", "ciscocollabhost.exe", "atmgr.exe"]
+subject = "Webex"
+
+# -------------------------------------------------------------------- chat
+[[rule]]
+activity = "chat"
+apps = ["ms-teams.exe", "teams.exe", "@browser"]
+title_regex = '^Chat \| (?P<subject>[^|]+?) \| Microsoft Teams'
+
+[[rule]]
+activity = "chat"
+apps = ["ms-teams.exe", "teams.exe"]
+subject = "Microsoft Teams"
+
+[[rule]]
+activity = "chat"
+apps = ["slack.exe", "discord.exe"]
+
+# ------------------------------------------------------------------- email
+[[rule]]
+activity = "email"
+apps = ["outlook.exe", "olk.exe", "thunderbird.exe"]
+title_regex = '^(?P<subject>.+?) - (?:.+ - )?Outlook$'
+
+[[rule]]
+activity = "email"
+apps = ["outlook.exe", "olk.exe", "thunderbird.exe"]
+subject = "Outlook"
+
+[[rule]]
+activity = "email"
+apps = ["@browser"]
+title_regex = '(?i)(?:outlook|gmail)\b'
+title_exclude = '(?i)microsoft teams'
+
+# ------------------------------------------------------- consoles (browser)
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)microsoft sentinel'
+subject = "Microsoft Sentinel"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)microsoft defender|security\.microsoft\.com'
+subject = "Microsoft Defender"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)microsoft entra|entra admin|azure active directory'
+subject = "Microsoft Entra"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)intune|endpoint manager'
+subject = "Microsoft Intune"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)microsoft 365 admin|exchange admin|purview'
+subject = "Microsoft 365 admin"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)microsoft azure|azure portal|portal\.azure'
+subject = "Azure portal"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)alibaba ?cloud|aliyun'
+subject = "Alibaba Cloud"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)\baws\b|amazon web services|console\.aws'
+subject = "AWS"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)vsphere|vcenter|esxi'
+subject = "VMware vSphere"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)stellar ?cyber'
+subject = "Stellar Cyber"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)splunk'
+title_exclude = '(?i)documentation|docs\.splunk'
+subject = "Splunk"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)pfsense'
+subject = "pfSense"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)fortigate|fortinet|fortianalyzer|fortimanager'
+subject = "Fortinet"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)silverfort'
+subject = "Silverfort"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)logicmonitor'
+subject = "LogicMonitor"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)xm ?cyber'
+subject = "XM Cyber"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)grafana|prometheus|kibana|elastic'
+subject = "Monitoring"
+
+[[rule]]
+activity = "console"
+apps = ["@browser"]
+title_regex = '(?i)cloudflare'
+subject = "Cloudflare"
+
+# --------------------------------------------------------------- AI tools
+[[rule]]
+activity = "ai"
+apps = ["claude.exe", "chatgpt.exe"]
+
+[[rule]]
+activity = "ai"
+apps = ["@browser"]
+title_regex = '(?i)\b(claude|chatgpt|copilot|gemini)\b'
+title_exclude = '(?i)microsoft teams'
+
+# -------------------------------------------------------------- research
+[[rule]]
+activity = "research"
+apps = ["@browser"]
+title_regex = '(?i)documentation|\bdocs\b|microsoft learn|stack ?overflow|github|reddit|google search| - search|knowledge ?base|community|forum|wiki'
+
+# ---------------------------------------------------------------- remote
+[[rule]]
+activity = "remote"
+apps = ["mstsc.exe", "putty.exe", "mobaxterm.exe", "vmconnect.exe", "vmrc.exe", "rdcman.exe", "remotedesktopmanager.exe", "anydesk.exe", "teamviewer.exe", "securecrt.exe", "termius.exe"]
+title_regex = '(?P<subject>[\w.-]+\.[\w.-]+|\d{1,3}(?:\.\d{1,3}){3})'
+
+[[rule]]
+activity = "remote"
+apps = ["mstsc.exe", "putty.exe", "mobaxterm.exe", "vmconnect.exe", "vmrc.exe", "rdcman.exe", "remotedesktopmanager.exe", "anydesk.exe", "teamviewer.exe", "securecrt.exe", "termius.exe"]
+
+[[rule]]
+activity = "remote"
+types = ["shell", "ai"]
+cmd_regex = '(?i)^\s*(?:ssh|mstsc|Enter-PSSession|winrs|telnet)\b.*?(?:@|\s)(?P<subject>[\w.-]+\.[\w.-]+|\d{1,3}(?:\.\d{1,3}){3}|[\w-]{3,})\s*$'
+
+# ---------------------------------------------------------------- terminal
+[[rule]]
+activity = "terminal"
+apps = ["windowsterminal.exe", "pwsh.exe", "powershell.exe", "powershell_ise.exe", "cmd.exe", "conhost.exe", "wsl.exe", "ubuntu.exe", "alacritty.exe", "wezterm-gui.exe"]
+
+[[rule]]
+activity = "terminal"
+types = ["shell"]
+
+[[rule]]
+activity = "ai"
+types = ["ai"]
+
+# ------------------------------------------------------------------- files
+[[rule]]
+activity = "files"
+apps = ["winscp.exe", "filezilla.exe", "explorer.exe", "totalcmd64.exe"]
+
+# -------------------------------------------------------------------- docs
+[[rule]]
+activity = "docs"
+apps = ["winword.exe", "excel.exe", "powerpnt.exe", "onenote.exe", "notepad.exe", "notepad++.exe", "acrord32.exe", "acrobat.exe", "obsidian.exe", "visio.exe", "drawio.exe"]
+
+# -------------------------------------------------------------------- code
+[[rule]]
+activity = "code"
+apps = ["code.exe", "cursor.exe", "pycharm64.exe", "devenv.exe", "idea64.exe", "sublime_text.exe"]

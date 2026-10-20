@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpsTrail</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M8 22l5-6 4 3 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#/">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M8 22l5-6 4 3 7-9"/></svg>
+        <span>OpsTrail</span>
+      </a>
+      <nav id="nav">
+        <a href="#/" data-route="day">วันนี้ / งาน</a>
+        <a href="#/worklogs" data-route="worklogs">Daily worklog</a>
+        <a href="#/docs" data-route="docs">เอกสาร</a>
+        <a href="#/search" data-route="search">ค้นหา</a>
+        <a href="#/settings" data-route="settings">ตั้งค่า</a>
+      </nav>
+      <div class="side-status">
+        <div id="agent-status" class="muted small">กำลังตรวจสอบ…</div>
+        <button id="capture-toggle" class="btn small" type="button">…</button>
+      </div>
+    </aside>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <dialog id="modal"><form method="dialog" id="modal-form"></form></dialog>
+  <script src="/static/app.js"></script>
+</body>
+</html>

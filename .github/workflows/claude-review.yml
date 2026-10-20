@@ -1,0 +1,40 @@
+# Claude reviews every PR (e.g. PRs opened by Copilot coding agent / Codex) and answers "@claude" mentions.
+# Needs repository secret ANTHROPIC_API_KEY — use a key that is scoped to ONE workspace
+# (keys that span several workspaces need an extra header the action may not send).
+# Options: https://github.com/anthropics/claude-code-action
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  review:
+    if: >
+      github.event_name == 'pull_request' ||
+      contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the reviewer for OpsTrail. Read AGENTS.md, SPEC.md and docs/HANDOFF.md first.
+            Review the changes of this pull request against those rules: business logic in service.py,
+            redaction of every captured string, Windows-first (ctypes, ASCII-only .ps1), mcp SDK 1.x/2.x
+            compatibility, the web UI LocalOnly security middleware, tests for every behaviour change, and
+            SPEC.md/HANDOFF.md kept current. Point out concrete bugs with file:line and a suggested fix.
+            Be concise; approve-style summary at the end (LGTM / changes needed).

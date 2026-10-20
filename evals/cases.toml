@@ -1,0 +1,41 @@
+# OpsTrail evaluation cases ("golden days"). Run:  opstrail eval        (deterministic, no AI)
+#                                                 opstrail eval --llm  (also writes documents with your AI)
+# Add a real day:  opstrail eval export --date 2026-10-20 --name my-day   (anonymised; REVIEW before committing)
+
+[[case]]
+name = "soc-day"
+day = "days/soc-day-01.jsonl"
+date = "2026-10-19"
+projects = { "Splunk" = ["splunk"], "Sentinel" = ["sentinel"], "pfSense" = ["pfsense"] }
+
+  [case.episodes]
+  count_min = 4
+  count_max = 5
+  meetings = 1
+  titles_contain = ["Splunk", "ประชุม: Weekly SOC sync", "Sentinel", "pfSense"]
+  meeting_time = "11:00–11:40"
+
+  [case.doc]
+  template = "sop"
+  episodes_with_title = "Splunk"
+  must_mention = ["9997", "splunkforwarder", "add monitor"]
+  must_not_contain = ["S3cretPass!"]
+  max_unsupported = 0
+
+[[case]]
+name = "meeting-day"
+day = "days/meeting-day-01.jsonl"
+date = "2026-10-21"
+
+  [case.episodes]
+  count_min = 3
+  count_max = 4
+  meetings = 2
+  titles_contain = ["ประชุม: Kickoff ลูกค้า ABC", "ประชุม: Design review Silverfort"]
+
+  [case.doc]
+  template = "meeting-minutes"
+  episodes_with_title = "Silverfort"
+  must_mention = ["pilot", "20"]
+  must_not_contain = []
+  max_unsupported = 0

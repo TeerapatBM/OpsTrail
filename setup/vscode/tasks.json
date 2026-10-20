@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "OpsTrail: install / update (Windows)",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}/scripts/install.ps1"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OpsTrail: run tests",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "OpsTrail: doctor",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "opstrail",
+        "doctor"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OpsTrail: today's episodes",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "opstrail",
+        "episodes"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OpsTrail: daily recap (print + save)",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "opstrail",
+        "recap",
+        "--print"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "OpsTrail: agent in foreground (debug)",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "opstrail",
+        "agent"
+      ],
+      "problemMatcher": [],
+      "isBackground": true
+    },
+    {
+      "label": "OpsTrail: MCP over HTTP (127.0.0.1:8765)",
+      "type": "process",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "-m",
+        "opstrail",
+        "mcp",
+        "--http"
+      ],
+      "problemMatcher": [],
+      "isBackground": true
+    }
+  ]
+}

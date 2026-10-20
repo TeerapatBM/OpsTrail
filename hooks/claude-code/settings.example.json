@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"<OPSTRAIL_REPO>/.venv/Scripts/opstrail.exe\" hook claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}

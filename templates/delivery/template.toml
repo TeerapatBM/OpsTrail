@@ -1,0 +1,3 @@
+title = "Delivery Document"
+description = "เอกสารส่งมอบงานให้ลูกค้า: scope, สภาพแวดล้อม, สิ่งที่ดำเนินการ, configuration, ผลการทดสอบ, ข้อแนะนำ และการส่งมอบ"
+title_format = "Delivery: {title}"

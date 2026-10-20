@@ -1,0 +1,3 @@
+title = "SOP — Standard Operating Procedure"
+description = "ขั้นตอนการปฏิบัติงานแบบทำซ้ำได้ (เช่น ติดตั้ง, ตั้งค่า, ตรวจสอบประจำ) มีคำสั่ง/ผลลัพธ์ที่คาดหวัง/รูปประกอบทุกขั้น"
+title_format = "SOP: {title}"

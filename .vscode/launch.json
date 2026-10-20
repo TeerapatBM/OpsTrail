@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "OpsTrail: agent",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "opstrail",
+      "args": ["agent"],
+      "justMyCode": true
+    },
+    {
+      "name": "OpsTrail: recap today",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "opstrail",
+      "args": ["recap", "--print"],
+      "justMyCode": true
+    },
+    {
+      "name": "OpsTrail: tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q"],
+      "justMyCode": false
+    }
+  ]
+}
